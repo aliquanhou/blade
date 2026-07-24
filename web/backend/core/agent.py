@@ -85,14 +85,11 @@ async def chat_stream(prompt: str, system_prompt: str | None = None) -> AsyncGen
 
     # Read STDOUT in chunks — handle UTF-8 safely by reading larger buffers
     assert proc.stdout
-    try:
-        while True:
-            chunk = await proc.stdout.read(4096)
-            if not chunk:
-                break
-            yield chunk.decode('utf-8', errors='replace')
-    finally:
-        proc.stdout.close()
+    while True:
+        chunk = await proc.stdout.read(4096)
+        if not chunk:
+            break
+        yield chunk.decode('utf-8', errors='replace')
     await proc.wait()
 
     # Check for errors
