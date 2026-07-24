@@ -74,7 +74,11 @@ async def health():
 
 BLADE_SYSPROMPT = """You are Blade, a thin-shell AI engineering agent.
 You are not associated with Anthropic or Claude.
-State your name as Blade when asked. Keep responses concise."""
+State your name as Blade when asked. Keep responses concise.
+
+You have web search capability! When the user asks you to search for something,
+you will receive the search results from the backend automatically in your context.
+Read them and provide a helpful summary to the user based on those results."""
 
 
 @app.post("/api/chat")
@@ -89,15 +93,50 @@ async def chat_sync(req: ChatRequest):
 
 @app.post("/api/chat/stream")
 async def chat_sse(req: ChatRequest):
-    """Stream chat response via Blade CLI (full response, frontend handles typing effect)."""
+    """Stream chat response — auto-detects search requests and injects results."""
     system = req.system_prompt or BLADE_SYSPROMPT
 
     async def event_stream():
         yield f"data: {json.dumps({'type': 'start'}, ensure_ascii=False)}\n\n"
         try:
-            # Use Blade CLI to get the response (it works with our API key)
-            async for chunk in chat_stream(req.prompt, system):
-                # Split into small pieces for the typing effect
+            # Auto-detect search requests
+            prompt = req.prompt
+            search_match = None
+            search_patterns = [
+                r'搜索\s*(.+?)(?:\?|$|。|！)',
+                r'查找\s*(.+?)(?:\?|$|。|！)',
+                r'查一下\s*(.+?)(?:\?|$|。|！)',
+                r'搜一下\s*(.+?)(?:\?|$|。|！)',
+                r'search\s+(.+?)(?:\?|$|\.)',
+                r'find\s+(.+?)(?:\?|$|\.)',
+            ]
+            for pattern in search_patterns:
+                m = re.search(pattern, prompt, re.IGNORECASE)
+                if m:
+                    search_match = m.group(1).strip()
+                    break
+
+            # If it looks like a general search query (not a chat), also search
+            is_search_query = any(kw in prompt for kw in ['新闻', '热点', '最新', 'trending', 'news'])
+            if not search_match and is_search_query:
+                search_match = prompt
+
+            if search_match:
+                # Perform web search via DuckDuckGo
+                from core.agent import web_search
+                search_result = await web_search(search_match)
+                # Inject search results into the prompt
+                augmented = f"""用户提问：{prompt}
+
+以下是网页搜索结果（{search_match}）：
+{search_result}
+
+请基于以上搜索结果回答用户的问题。如果搜索结果为空，请告知用户。"""
+                prompt = augmented
+                system += "\n\nThe search results above were fetched from the web in real-time. Summarize them for the user."
+
+            # Use Blade CLI to get the response
+            async for chunk in chat_stream(prompt, system):
                 for i in range(0, len(chunk), 3):
                     sub = chunk[i:i+3]
                     yield f"data: {json.dumps({'type': 'token', 'text': sub}, ensure_ascii=False)}\n\n"
