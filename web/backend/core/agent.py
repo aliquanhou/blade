@@ -12,6 +12,15 @@ from . import config
 def _build_env() -> dict:
     """Build environment variables for the Blade engine."""
     env = os.environ.copy()
+    # Ensure Node.js is in PATH
+    node_paths = [
+        r"c:\Program Files\nodejs",
+    ]
+    path = env.get("PATH", "")
+    for np in node_paths:
+        if np not in path:
+            path = np + os.pathsep + path
+    env["PATH"] = path
     env.setdefault("BLADE_PROVIDER", config.PROVIDER)
     env.setdefault("CLAUDE_CODE_GIT_BASH_PATH", "C:\\Program Files\\Git\\bin\\bash.exe")
     env.setdefault("CLAUDE_CODE_DISABLE_UPDATES", "1")
@@ -54,13 +63,15 @@ async def chat(prompt: str, system_prompt: str | None = None) -> str:
     return stdout.decode().strip()
 
 
-async def chat_stream(prompt: str) -> AsyncGenerator[str, None]:
+async def chat_stream(prompt: str, system_prompt: str | None = None) -> AsyncGenerator[str, None]:
     """Stream response from Blade engine token by token."""
     cmd = [
         "node",
         str(config.BLADE_SCRIPT),
         "-p", prompt,
     ]
+    if system_prompt:
+        cmd.extend(["--append-system-prompt", system_prompt])
     if config.MODEL:
         cmd.extend(["--model", config.MODEL])
 
@@ -73,12 +84,19 @@ async def chat_stream(prompt: str) -> AsyncGenerator[str, None]:
     )
 
     # Read STDOUT in chunks for streaming effect
+    # Use line-based reading to avoid splitting UTF-8 multi-byte chars
     assert proc.stdout
-    while True:
-        chunk = await proc.stdout.read(64)
-        if not chunk:
-            break
-        yield chunk.decode()
+    reader = asyncio.StreamReader(protocol=None)
+    transport, _ = await asyncio.get_event_loop().connect_read_pipe(
+        lambda: asyncio.StreamReaderProtocol(reader), proc.stdout)
+    try:
+        while True:
+            line = await reader.readline()
+            if not line:
+                break
+            yield line.decode('utf-8', errors='replace')
+    finally:
+        transport.close()
 
     # Check for errors
     await proc.wait()

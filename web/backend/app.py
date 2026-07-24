@@ -71,10 +71,16 @@ async def health():
 
 # ── Chat ──────────────────────────────────────────────────────
 
+BLADE_SYSPROMPT = """You are Blade, a thin-shell AI engineering agent.
+You are not associated with Anthropic or Claude.
+State your name as Blade when asked. Keep responses concise."""
+
+
 @app.post("/api/chat")
 async def chat_sync(req: ChatRequest):
+    system = req.system_prompt or BLADE_SYSPROMPT
     try:
-        result = await chat(req.prompt, req.system_prompt)
+        result = await chat(req.prompt, system)
         return {"response": result}
     except RuntimeError as e:
         raise HTTPException(502, detail=str(e))
@@ -82,14 +88,15 @@ async def chat_sync(req: ChatRequest):
 
 @app.post("/api/chat/stream")
 async def chat_sse(req: ChatRequest):
+    system = req.system_prompt or BLADE_SYSPROMPT
     async def event_stream():
-        yield f"data: {json.dumps({'type': 'start'})}\n\n"
+        yield f"data: {json.dumps({'type': 'start'}, ensure_ascii=False)}\n\n"
         try:
-            async for token in chat_stream(req.prompt):
-                yield f"data: {json.dumps({'type': 'token', 'text': token})}\n\n"
-            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+            async for token in chat_stream(req.prompt, system):
+                yield f"data: {json.dumps({'type': 'token', 'text': token}, ensure_ascii=False)}\n\n"
+            yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
         except Exception as e:
-            yield f"data: {json.dumps({'type': 'error', 'error': str(e)})}\n\n"
+            yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
 
     return StreamingResponse(
         event_stream(), media_type="text/event-stream",

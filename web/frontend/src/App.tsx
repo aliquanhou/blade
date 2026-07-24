@@ -51,12 +51,10 @@ function App() {
       <header className="flex items-center justify-between px-4 py-2 border-b border-gray-700 bg-gray-900 shrink-0">
         <div className="flex items-center gap-3">
           <span className="text-lg font-bold">⚔️ Blade</span>
-          {health && (
-            <span className="flex items-center gap-1 text-xs text-gray-400">
-              <span className={`w-2 h-2 rounded-full ${health.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'}`} />
-              {health.provider} · {health.model}
-            </span>
-          )}
+          <span className="flex items-center gap-1 text-xs text-gray-400">
+            <span className={`w-2 h-2 rounded-full ${health?.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'}`} />
+            {health ? `${health.provider} · ${health.model}` : 'connecting...'}
+          </span>
         </div>
         <button onClick={() => setShowSettings(true)} className="text-sm text-gray-400 hover:text-white px-3 py-1 rounded hover:bg-gray-800">⚙️ Settings</button>
       </header>

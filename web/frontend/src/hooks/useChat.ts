@@ -4,7 +4,7 @@ import type { Message } from '../types';
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([{
-    id: '0', role: 'assistant', content: 'Hello! I\'m Blade, ready to help. What are you working on?', timestamp: Date.now(),
+    id: '0', role: 'assistant', content: 'Hello! I\'m **Blade**, a thin-shell AI engineering agent.\n\nI can help with:\n- 📁 File operations\n- 💻 Code generation\n- 🔍 Web search & fetch\n- 📊 Project analysis', timestamp: Date.now(),
   }]);
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
