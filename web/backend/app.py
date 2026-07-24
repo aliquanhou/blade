@@ -157,7 +157,68 @@ async def chat_sse(req: ChatRequest):
                 chat_history[session_id].append({"role": "assistant", "content": f"[搜索: {query}]"})
                 return
 
-            # Normal chat
+            # Tool intent detection — route to direct Python tools when possible
+            tool_intents = {
+                ("列出文件", "list files", "显示目录", "查看目录", "ls", "dir"): "list_files",
+                ("读取文件", "read file", "查看文件", "cat", "type"): "read_file",
+                ("写入文件", "write file", "创建文件", "新建文件"): "write_file",
+                ("编辑文件", "edit file", "修改文件", "替换"): "edit_file",
+                ("删除文件", "delete file", "移除文件"): "delete_file",
+                ("搜索内容", "search", "查找内容", "grep"): "grep_search",
+                ("分析代码", "analyze", "代码结构"): "analyze_python",
+                ("统计行数", "count lines", "代码量"): "count_lines",
+                ("执行命令", "run", "运行命令", "执行"): "run_bash",
+                ("系统信息", "system info", "系统状态"): "system_info",
+                ("git状态", "git status", "仓库状态"): "git_status",
+                ("git日志", "git log", "提交历史"): "git_log",
+                ("git差异", "git diff", "修改内容"): "git_diff",
+                ("git分支", "git branch", "分支列表"): "git_branches",
+                ("进程", "process", "任务管理器"): "list_processes",
+                ("磁盘", "disk", "硬盘"): "disk_usage",
+                ("内存", "memory", "ram"): "memory_usage",
+                ("cpu", "处理器", "中央处理器"): "cpu_info",
+            }
+            matched_tool = None
+            prompt_lower = req.prompt.lower()
+            for keywords, tool_name in tool_intents.items():
+                if any(kw in prompt_lower for kw in keywords):
+                    matched_tool = tool_name
+                    break
+
+            if matched_tool:
+                # Execute tool directly, bypass model
+                method_map = {
+                    "list_files": lambda: blade_tools.list_files("."),
+                    "read_file": lambda: blade_tools.read_file("."),
+                    "write_file": lambda: blade_tools.write_file("."),
+                    "edit_file": lambda: blade_tools.edit_file("."),
+                    "delete_file": lambda: blade_tools.delete_file("."),
+                    "grep_search": lambda: blade_tools.grep_search(".", ""),
+                    "analyze_python": lambda: blade_tools.analyze_python("."),
+                    "count_lines": lambda: blade_tools.count_lines("."),
+                    "run_bash": lambda: blade_tools.run_bash(""),
+                    "system_info": lambda: blade_tools.system_info(),
+                    "git_status": lambda: blade_tools.git_status("."),
+                    "git_log": lambda: blade_tools.git_log("."),
+                    "git_diff": lambda: blade_tools.git_diff("."),
+                    "git_branches": lambda: blade_tools.git_branches("."),
+                    "list_processes": lambda: blade_tools.list_processes(),
+                    "disk_usage": lambda: blade_tools.disk_usage(),
+                    "memory_usage": lambda: blade_tools.memory_usage(),
+                    "cpu_info": lambda: blade_tools.cpu_info(),
+                }
+                fn = method_map.get(matched_tool)
+                if fn:
+                    result = await asyncio.to_thread(fn)
+                    yield f"data: {json.dumps({'type': 'token', 'text': str(result)}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                    if session_id not in chat_history:
+                        chat_history[session_id] = []
+                    chat_history[session_id].append({"role": "user", "content": req.prompt})
+                    chat_history[session_id].append({"role": "assistant", "content": str(result)})
+                    return
+
+            # Normal chat — go through model
             full_response = ""
             async for chunk in chat_stream(prompt, system_prompt):
                 full_response += chunk
