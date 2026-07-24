@@ -201,9 +201,11 @@ async function main() {
     }
 
     // P0: Auto-accept mode — skip permission prompts
+    // Engine option: --dangerously-skip-permissions for full bypass
+    // Safer approach: only skip non-dangerous permissions
     const autoAccept = process.env.BLADE_AUTO_ACCEPT !== 'false';
-    if (autoAccept && !engineArgs.includes('--auto-accept')) {
-      engineArgs = ['--auto-accept', ...engineArgs];
+    if (autoAccept && process.env.BLADE_AUTO_ACCEPT === 'dangerous' && !engineArgs.includes('--dangerously-skip-permissions')) {
+      engineArgs = ['--dangerously-skip-permissions', ...engineArgs];
     }
 
     if (process.env.BLADE_DEBUG) {
