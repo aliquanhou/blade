@@ -1,9 +1,9 @@
 #!/usr/bin/env node
 /**
- * Blade â€?thin-shell AI engineering agent.
+ * Blade ï¿½?thin-shell AI engineering agent.
  *
  * Model handles intelligence, shell handles communication.
- * Provider-agnostic â€?supports DeepSeek, OpenAI, Ollama, and more.
+ * Provider-agnostic ï¿½?supports DeepSeek, OpenAI, Ollama, and more.
  */
 
 import { fileURLToPath } from 'url';
@@ -116,12 +116,18 @@ function setupEnvironment(config, providerConfig) {
     process.env.CLAUDE_CODE_MODEL = model || providerConfig.defaultModel;
   }
 
+  // P0: Disable update notification by default
+  if (!process.env.CLAUDE_CODE_DISABLE_UPDATES) {
+    process.env.CLAUDE_CODE_DISABLE_UPDATES = '1';
+  }
+
   if (process.env.BLADE_DEBUG) {
     console.error('[Blade] Config:', JSON.stringify({ provider: config.provider, ...providerConfig, apiKey: apiKey ? '***' : '' }, null, 2));
     console.error('[Blade] Environment:', {
       ANTHROPIC_API_KEY: process.env.ANTHROPIC_API_KEY ? '***' : undefined,
       ANTHROPIC_BASE_URL: process.env.ANTHROPIC_BASE_URL,
       CLAUDE_CODE_MODEL: process.env.CLAUDE_CODE_MODEL,
+      CLAUDE_CODE_DISABLE_UPDATES: process.env.CLAUDE_CODE_DISABLE_UPDATES,
     });
   }
 }
@@ -144,7 +150,7 @@ async function main() {
 
   if (args.length === 1 && (args[0] === '--help' || args[0] === '-h')) {
     console.log([
-      'Blade â€?thin-shell AI engineering agent',
+      'Blade ï¿½?thin-shell AI engineering agent',
       '',
       'Usage:',
       '  blade [options] [prompt]',
@@ -154,11 +160,12 @@ async function main() {
       '  --help, -h       Show this help',
       '',
       'Environment:',
-      '  BLADE_PROVIDER   AI provider (deepseek|openai|anthropic|ollama|auto)',
-      '  BLADE_API_KEY    API key',
-      '  BLADE_MODEL      Model name',
-      '  BLADE_BASE_URL   API base URL',
-      '  BLADE_DEBUG      Debug mode',
+      '  BLADE_PROVIDER       AI provider (deepseek|openai|anthropic|ollama|auto)',
+      '  BLADE_API_KEY        API key',
+      '  BLADE_MODEL          Model name',
+      '  BLADE_BASE_URL       API base URL',
+      '  BLADE_AUTO_ACCEPT    Auto-accept mode (default: true)',
+      '  BLADE_DEBUG          Debug mode',
       '',
       'Config:',
       '  ~/.blade/config.json',
@@ -191,6 +198,12 @@ async function main() {
     const model = process.env.CLAUDE_CODE_MODEL;
     if (model && !engineArgs.includes('--model')) {
       engineArgs = ['--model', model, ...engineArgs];
+    }
+
+    // P0: Auto-accept mode â€” skip permission prompts
+    const autoAccept = process.env.BLADE_AUTO_ACCEPT !== 'false';
+    if (autoAccept && !engineArgs.includes('--auto-accept')) {
+      engineArgs = ['--auto-accept', ...engineArgs];
     }
 
     if (process.env.BLADE_DEBUG) {
