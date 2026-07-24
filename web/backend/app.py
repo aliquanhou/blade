@@ -108,19 +108,16 @@ async def chat_sse(req: ChatRequest):
 
             if should_search:
                 from core.agent import web_search
-                # Strip common prefixes to get the actual query
                 query = re.sub(r'^(搜索|搜一下|查一下|查找|search|find)\s*', '', prompt, flags=re.IGNORECASE)
-                query = re.sub(r'[？?。！!，,]', '', query).strip()
-                if not query:
-                    query = prompt
+                query = re.sub(r'[？?。！!，,]', '', query).strip() or prompt
                 search_result = await web_search(query)
-                prompt = f"""用户提问：{prompt}
-
-以下是网页搜索结果（{search_match}）：
-{search_result}
-
-请基于以上搜索结果回答用户的问题。"""
-                system_prompt = base_system + "\n\nThe search results above were fetched from the web in real-time. Summarize them for the user."
+                # Direct output: return search results without going through model
+                yield f"data: {json.dumps({'type': 'token', 'text': '## 搜索结果\n\n'}, ensure_ascii=False)}\n\n"
+                for i in range(0, len(search_result), 4):
+                    sub = search_result[i:i+4]
+                    yield f"data: {json.dumps({'type': 'token', 'text': sub}, ensure_ascii=False)}\n\n"
+                yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                return
 
             async for chunk in chat_stream(prompt, system_prompt):
                 for i in range(0, len(chunk), 3):
