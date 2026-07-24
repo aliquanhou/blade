@@ -102,28 +102,18 @@ async def chat_sse(req: ChatRequest):
         try:
             prompt = req.prompt
             system_prompt = base_system
-            search_match = None
-            search_patterns = [
-                r'搜索\s*(.+?)(?:\?|$|。|！)',
-                r'查找\s*(.+?)(?:\?|$|。|！)',
-                r'查一下\s*(.+?)(?:\?|$|。|！)',
-                r'搜一下\s*(.+?)(?:\?|$|。|！)',
-                r'search\s+(.+?)(?:\?|$|\.)',
-                r'find\s+(.+?)(?:\?|$|\.)',
-            ]
-            for pattern in search_patterns:
-                m = re.search(pattern, prompt, re.IGNORECASE)
-                if m:
-                    search_match = m.group(1).strip()
-                    break
+            # Detect search intent
+            search_keywords = ['搜索', '搜一下', '查一下', '查找', 'search', 'find', '新闻', '热点', 'news', 'trending']
+            should_search = any(kw in prompt.lower() for kw in search_keywords)
 
-            is_search_query = any(kw in prompt for kw in ['新闻', '热点', '最新', 'trending', 'news'])
-            if not search_match and is_search_query:
-                search_match = prompt
-
-            if search_match:
+            if should_search:
                 from core.agent import web_search
-                search_result = await web_search(search_match)
+                # Strip common prefixes to get the actual query
+                query = re.sub(r'^(搜索|搜一下|查一下|查找|search|find)\s*', '', prompt, flags=re.IGNORECASE)
+                query = re.sub(r'[？?。！!，,]', '', query).strip()
+                if not query:
+                    query = prompt
+                search_result = await web_search(query)
                 prompt = f"""用户提问：{prompt}
 
 以下是网页搜索结果（{search_match}）：
