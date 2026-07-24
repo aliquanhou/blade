@@ -1,0 +1,45 @@
+@import "tailwindcss";
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: system-ui, -apple-system, sans-serif;
+  background: #030712;
+  color: #e2e8f0;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #475569; border-radius: 3px; }
+
+/* Code block styling */
+pre code {
+  font-family: 'JetBrains Mono', 'Fira Code', 'Consolas', monospace;
+  font-size: 13px;
+  line-height: 1.5;
+}
+
+/* Syntax highlighting - simple CSS-based */
+.hljs-keyword { color: #c792ea; }
+.hljs-string { color: #c3e88d; }
+.hljs-number { color: #f78c6c; }
+.hljs-comment { color: #546e7a; font-style: italic; }
+.hljs-function { color: #82aaff; }
+.hljs-title { color: #82aaff; }
+.hljs-built_in { color: #ffcb6b; }
+.hljs-type { color: #ffcb6b; }
+.hljs-literal { color: #f78c6c; }
+.hljs-attr { color: #f07178; }
+.hljs-params { color: #e2e8f0; }
+.hljs-meta { color: #89ddff; }
+.hljs-tag { color: #f07178; }
+.hljs-name { color: #f07178; }
+.hljs-selector-class { color: #ffcb6b; }
+
+/* Typing cursor */
+@keyframes blink { 0%,100% { opacity: 1; } 50% { opacity: 0; } }
+.typing-cursor::after {
+  content: '▊';
+  animation: blink 0.8s step-end infinite;
+}

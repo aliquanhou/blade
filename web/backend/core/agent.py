@@ -3,8 +3,10 @@
 import asyncio
 import json
 import os
+import re
 import subprocess
 from typing import AsyncGenerator
+import httpx
 
 from . import config
 
@@ -100,15 +102,81 @@ async def chat_stream(prompt: str, system_prompt: str | None = None) -> AsyncGen
             yield f"\n\n[Error: {stderr}]"
 
 
+async def web_search(query: str) -> str:
+    """Search the web using DuckDuckGo (no API key needed)."""
+    url = "https://html.duckduckgo.com/html/"
+    params = {"q": query}
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.post(url, data=params, headers=headers)
+            resp.encoding = "utf-8"
+            html = resp.text
+
+            # Extract search results from HTML (simple regex-based)
+            results = []
+            # Find result blocks
+            blocks = re.findall(
+                r'<a[^>]*class="result__a"[^>]*href="([^"]*)"[^>]*>(.*?)</a>',
+                html,
+                re.DOTALL,
+            )
+            snippets = re.findall(
+                r'<a[^>]*class="result__snippet"[^>]*>(.*?)</a>',
+                html,
+                re.DOTALL,
+            )
+
+            for i, (href, title) in enumerate(blocks[:5]):
+                title_text = re.sub(r"<[^>]+>", "", title).strip()
+                snippet_text = ""
+                if i < len(snippets):
+                    snippet_text = re.sub(r"<[^>]+>", "", snippets[i]).strip()
+                results.append(f"{i+1}. [{title_text}]({href})\n   {snippet_text}")
+
+            if not results:
+                return f"从 DuckDuckGo 搜索「{query}」未找到结果。"
+
+            return f"## 搜索结果：{query}\n\n" + "\n\n".join(results)
+
+    except Exception as e:
+        return f"搜索失败：{e}"
+
+
+async def web_fetch(url: str) -> str:
+    """Fetch and extract text content from a URL."""
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=15, follow_redirects=True) as client:
+            resp = await client.get(url, headers=headers)
+            resp.encoding = "utf-8"
+            text = resp.text
+            # Strip HTML tags for a clean view
+            text = re.sub(r"<script[^>]*>.*?</script>", "", text, flags=re.DOTALL)
+            text = re.sub(r"<style[^>]*>.*?</style>", "", text, flags=re.DOTALL)
+            text = re.sub(r"<[^>]+>", " ", text)
+            text = re.sub(r"\s+", " ", text).strip()
+            # Truncate to 2000 chars
+            if len(text) > 2000:
+                text = text[:2000] + "..."
+            return text or "(empty content)"
+    except Exception as e:
+        return f"获取失败：{e}"
+
+
 def get_available_tools() -> list[dict]:
-    """Return list of available tools (static for now)."""
+    """Return list of available tools."""
     return [
-        {"name": "read_file", "description": "Read file contents", "category": "file"},
-        {"name": "write_file", "description": "Write to file", "category": "file"},
-        {"name": "glob_search", "description": "Find files by pattern", "category": "file"},
-        {"name": "grep_search", "description": "Search file contents", "category": "file"},
-        {"name": "run_bash", "description": "Execute shell command", "category": "shell"},
-        {"name": "web_fetch", "description": "Fetch URL content", "category": "web"},
-        {"name": "web_search", "description": "Search the web", "category": "web"},
-        {"name": "ask_user_question", "description": "Ask user for input", "category": "system"},
+        {"name": "read_file", "description": "读取文件内容", "category": "file"},
+        {"name": "write_file", "description": "写入文件", "category": "file"},
+        {"name": "glob_search", "description": "搜索文件", "category": "file"},
+        {"name": "grep_search", "description": "搜索文件内容", "category": "file"},
+        {"name": "run_bash", "description": "执行命令", "category": "shell"},
+        {"name": "web_fetch", "description": "获取网页内容", "category": "web"},
+        {"name": "web_search", "description": "搜索网络", "category": "web"},
+        {"name": "ask_user_question", "description": "询问用户", "category": "system"},
     ]

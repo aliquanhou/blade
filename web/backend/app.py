@@ -17,7 +17,7 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core import config
-from core.agent import chat, chat_stream, get_available_tools
+from core.agent import chat, chat_stream, get_available_tools, web_search, web_fetch
 from core.direct_stream import chat_stream_direct
 
 app = FastAPI(title="Blade Web", version="1.0.0")
@@ -141,6 +141,18 @@ async def execute_tool(req: ToolExecuteRequest):
             return {"result": "Command timed out", "exit_code": -1}
         except Exception as e:
             return {"result": f"Error: {e}", "exit_code": -1}
+    elif req.name == "web_search":
+        query = params.get("query", params.get("command", ""))
+        if not query:
+            return {"result": "No search query", "exit_code": 1}
+        result = await web_search(query)
+        return {"result": result, "exit_code": 0}
+    elif req.name == "web_fetch":
+        url = params.get("url", params.get("command", ""))
+        if not url:
+            return {"result": "No URL", "exit_code": 1}
+        result = await web_fetch(url)
+        return {"result": result, "exit_code": 0}
     else:
         return {"result": f"Tool '{req.name}' executed (mock)", "exit_code": 0}
 
