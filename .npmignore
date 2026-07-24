@@ -1,0 +1,32 @@
+# Source
+src/
+tests/
+node_modules/
+
+# Build artifacts
+*.bak
+*.map
+
+# Config extracted prompts (not needed for distribution)
+config/prompt-*.txt
+
+# Old docs (from upstream)
+README.en.md
+
+# Editor files
+.vscode/
+.idea/
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.local
+
+# Git
+.git/
+.gitignore
+.gitattributes

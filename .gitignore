@@ -1,0 +1,6 @@
+﻿node_modules/
+engine/blade-engine.js.bak
+.vscode/
+.DS_Store
+*.log
+.env

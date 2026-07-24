@@ -1,0 +1,84 @@
+{
+  "name": "blade-ai",
+  "version": "1.0.0",
+  "description": "⚔️ Blade — 薄壳 AI 工程智能体。模型负责智能，壳只负责传递。",
+  "type": "module",
+  "bin": {
+    "blade": "bin/blade.js"
+  },
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js"
+    },
+    "./providers/*": {
+      "types": "./dist/providers/*.d.ts",
+      "import": "./dist/providers/*.js"
+    }
+  },
+  "files": [
+    "dist/",
+    "bin/",
+    "engine/blade-engine.js",
+    "config/",
+    "BLADE.md",
+    "README.md",
+    "LICENSE"
+  ],
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "author": "Yu Qiuhong <yuqiuhong@blade-ai.dev>",
+  "contributors": [
+    "Blade Contributors"
+  ],
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/yuqiuhong/blade.git"
+  },
+  "homepage": "https://github.com/yuqiuhong/blade#readme",
+  "bugs": {
+    "url": "https://github.com/yuqiuhong/blade/issues"
+  },
+  "funding": {
+    "type": "individual",
+    "url": "https://github.com/sponsors/yuqiuhong"
+  },
+  "keywords": [
+    "ai",
+    "agent",
+    "cli",
+    "coding",
+    "terminal",
+    "thin-shell",
+    "deepseek",
+    "openai",
+    "anthropic",
+    "ollama"
+  ],
+  "publishConfig": {
+    "access": "public",
+    "registry": "https://registry.npmjs.org"
+  },
+  "scripts": {
+    "build": "bun run build.ts",
+    "build:dev": "BLADE_DEV=1 bun run build.ts",
+    "start": "node bin/blade.js",
+    "blade": "node bin/blade.js",
+    "test": "bun test",
+    "test:all": "bun test tests/providers.test.ts tests/build.test.ts",
+    "test:providers": "bun test tests/providers.test.ts",
+    "test:build": "bun test tests/build.test.ts",
+    "patch": "node bin/patch-engine.js",
+    "kb": "node bin/update-kb.js",
+    "proxy": "node src/providers/proxy-server.ts",
+    "clean": "rm -rf dist",
+    "prepublishOnly": "bun run build && bun test tests/build.test.ts",
+    "version": "git add -A",
+    "postversion": "git push && git push --tags"
+  },
+  "dependencies": {}
+}

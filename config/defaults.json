@@ -1,0 +1,11 @@
+{
+  "comment": "Blade 默认配置 — 在 ~/.blade/config.json 中覆盖",
+  "provider": "auto",
+  "model": "",
+  "baseUrl": "",
+  "features": {
+    "simpleMode": false,
+    "disableTelemetry": true,
+    "debug": false
+  }
+}
