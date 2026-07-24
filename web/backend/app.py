@@ -18,8 +18,13 @@ import sys
 sys.path.insert(0, str(Path(__file__).parent))
 
 from core import config
-from core.agent import chat, chat_stream, get_available_tools, web_search, web_fetch
+from core.agent import chat, chat_stream, web_search, web_fetch
 from core.direct_stream import chat_stream_direct
+from core.tools import BladeTools
+
+# Tool registry
+blade_tools = BladeTools()
+TOOL_LIST = blade_tools.get_tool_list()
 
 app = FastAPI(title="Blade Web", version="1.0.0")
 
@@ -179,46 +184,48 @@ async def chat_sse(req: ChatRequest):
 
 @app.get("/api/tools")
 async def list_tools():
-    return {"tools": get_available_tools()}
+    return {"tools": TOOL_LIST}
 
 
 @app.post("/api/tools/execute")
 async def execute_tool(req: ToolExecuteRequest):
-    """Execute a tool (via subprocess for shell, or mock for demo)."""
+    """Execute any tool directly via Python method."""
     params = req.params or {}
-    if req.name == "run_bash":
-        cmd = params.get("command", "")
-        if not cmd:
-            return {"result": "No command provided", "exit_code": 1}
-        try:
-            loop = asyncio.get_event_loop()
-            result = await loop.run_in_executor(None, lambda: subprocess.run(
-                ["cmd", "/c", cmd],
-                capture_output=True, text=True, timeout=30,
-                cwd=str(config.BLADE_ROOT),
-            ))
-            return {
-                "result": (result.stdout.strip() or result.stderr.strip()) or "(empty output)",
-                "exit_code": result.returncode,
-            }
-        except subprocess.TimeoutExpired:
-            return {"result": "Command timed out", "exit_code": -1}
-        except Exception as e:
-            return {"result": f"Error: {e}", "exit_code": -1}
-    elif req.name == "web_search":
-        query = params.get("query", params.get("command", ""))
-        if not query:
-            return {"result": "No search query", "exit_code": 1}
-        result = await web_search(query)
-        return {"result": result, "exit_code": 0}
-    elif req.name == "web_fetch":
-        url = params.get("url", params.get("command", ""))
-        if not url:
-            return {"result": "No URL", "exit_code": 1}
-        result = await web_fetch(url)
-        return {"result": result, "exit_code": 0}
-    else:
-        return {"result": f"Tool '{req.name}' executed (mock)", "exit_code": 0}
+    tool_name = req.name
+
+    method_map = {
+        "read_file": lambda: blade_tools.read_file(params.get("path", "")),
+        "write_file": lambda: blade_tools.write_file(params.get("path", ""), params.get("content", "")),
+        "edit_file": lambda: blade_tools.edit_file(params.get("path", ""), params.get("old_text", ""), params.get("new_text", "")),
+        "delete_file": lambda: blade_tools.delete_file(params.get("path", "")),
+        "list_files": lambda: blade_tools.list_files(params.get("path", ".")),
+        "grep_search": lambda: blade_tools.grep_search(params.get("path", "."), params.get("pattern", "")),
+        "analyze_python": lambda: blade_tools.analyze_python(params.get("path", ".")),
+        "count_lines": lambda: blade_tools.count_lines(params.get("path", ".")),
+        "run_bash": lambda: blade_tools.run_bash(params.get("command", "")),
+        "system_info": lambda: blade_tools.system_info(),
+        "web_get": lambda: asyncio.run(blade_tools.web_get(params.get("url", ""))),
+        "web_search": lambda: asyncio.run(blade_tools.web_search(params.get("query", params.get("command", "")))),
+        "git_status": lambda: blade_tools.git_status(params.get("path", ".")),
+        "git_log": lambda: blade_tools.git_log(params.get("path", "."), int(params.get("count", 10))),
+        "git_diff": lambda: blade_tools.git_diff(params.get("path", ".")),
+        "git_branches": lambda: blade_tools.git_branches(params.get("path", ".")),
+        "list_processes": lambda: blade_tools.list_processes(),
+        "disk_usage": lambda: blade_tools.disk_usage(),
+        "memory_usage": lambda: blade_tools.memory_usage(),
+        "cpu_info": lambda: blade_tools.cpu_info(),
+    }
+
+    fn = method_map.get(tool_name)
+    if not fn:
+        return {"result": f"Unknown tool: {tool_name}", "exit_code": 1}
+    try:
+        result = fn()
+        if asyncio.iscoroutine(result):
+            result = await result
+        return {"result": str(result), "exit_code": 0}
+    except Exception as e:
+        return {"result": f"Error: {e}", "exit_code": -1}
 
 
 # ── Files ─────────────────────────────────────────────────────

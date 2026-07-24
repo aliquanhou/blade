@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { useChatStore } from './stores/chatStore';
+import { useToolStore } from './stores/toolStore';
 import { MessageItem } from './components/chat/MessageItem';
 import { CodeBlock } from './components/chat/CodeBlock';
 import { bladeApi } from './api/client';
@@ -122,12 +123,33 @@ function App() {
               )}
               {sidebarTab === 'tools' && (
                 <div className="space-y-1">
-                  {tools.map(t => (
-                    <div key={t.name} className="px-2 py-1.5 hover:bg-gray-800 rounded">
-                      <div className="font-medium text-xs">{t.name}</div>
-                      <div className="text-xs text-gray-500 truncate">{t.description}</div>
-                    </div>
-                  ))}
+                  {['file', 'code', 'shell', 'web', 'git', 'system'].map(cat => {
+                    const catTools = tools.filter(t => t.category === cat);
+                    if (!catTools.length) return null;
+                    return (
+                      <div key={cat} className="mb-3">
+                        <div className="text-[10px] uppercase text-gray-500 font-semibold px-2 mb-1">
+                          {cat === 'file' ? '📁 文件' : cat === 'code' ? '💻 代码' : cat === 'shell' ? '⚡ Shell' : cat === 'web' ? '🌐 Web' : cat === 'git' ? '📊 Git' : '📈 系统'}
+                        </div>
+                        {catTools.map(t => {
+                          const st = useToolStore.getState().tools[t.name];
+                          const status = st?.status || 'idle';
+                          const statusIcon = status === 'running' ? '◉' : status === 'completed' ? '✅' : status === 'failed' ? '❌' : '●';
+                          const statusColor = status === 'running' ? 'text-blue-400 animate-pulse' : status === 'completed' ? 'text-green-400' : status === 'failed' ? 'text-red-400' : 'text-gray-500';
+                          return (
+                            <div key={t.name} className={`flex items-center gap-2 px-2 py-1 rounded ${status === 'running' ? 'bg-blue-900/30' : 'hover:bg-gray-800'}`}>
+                              <span className={`text-xs ${statusColor}`}>{statusIcon}</span>
+                              <span className="text-xs flex-1 truncate">{t.name}</span>
+                              {status === 'running' && <span className="text-[10px] text-blue-400">⏳</span>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    );
+                  })}
+                  <div className="border-t border-gray-700 mt-2 pt-2">
+                    <div className="text-[10px] text-gray-500 px-2">共 {tools.length} 个工具</div>
+                  </div>
                 </div>
               )}
             </div>
