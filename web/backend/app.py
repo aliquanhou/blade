@@ -18,6 +18,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 from core import config
 from core.agent import chat, chat_stream, get_available_tools
+from core.direct_stream import chat_stream_direct
 
 app = FastAPI(title="Blade Web", version="1.0.0")
 
@@ -88,12 +89,18 @@ async def chat_sync(req: ChatRequest):
 
 @app.post("/api/chat/stream")
 async def chat_sse(req: ChatRequest):
+    """Stream chat response via Blade CLI (full response, frontend handles typing effect)."""
     system = req.system_prompt or BLADE_SYSPROMPT
+
     async def event_stream():
         yield f"data: {json.dumps({'type': 'start'}, ensure_ascii=False)}\n\n"
         try:
-            async for token in chat_stream(req.prompt, system):
-                yield f"data: {json.dumps({'type': 'token', 'text': token}, ensure_ascii=False)}\n\n"
+            # Use Blade CLI to get the response (it works with our API key)
+            async for chunk in chat_stream(req.prompt, system):
+                # Split into small pieces for the typing effect
+                for i in range(0, len(chunk), 3):
+                    sub = chunk[i:i+3]
+                    yield f"data: {json.dumps({'type': 'token', 'text': sub}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
