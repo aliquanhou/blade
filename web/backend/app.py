@@ -37,6 +37,7 @@ class ChatRequest(BaseModel):
     prompt: str
     system_prompt: str | None = None
     model: str | None = None
+    session_id: str | None = None
 
 class FileWriteRequest(BaseModel):
     path: str
@@ -72,6 +73,8 @@ async def health():
 
 
 # ── Chat ──────────────────────────────────────────────────────
+# In-memory conversation history per session
+chat_history: dict[str, list[dict]] = {}
 
 BLADE_SYSPROMPT = """You are Blade, a thin-shell AI engineering agent.
 You are not associated with Anthropic or Claude.
@@ -82,11 +85,34 @@ you will receive the search results from the backend automatically in your conte
 Read them and provide a helpful summary to the user based on those results."""
 
 
+def build_prompt_with_history(session_id: str, new_prompt: str) -> str:
+    """Build a prompt that includes conversation history."""
+    history = chat_history.get(session_id, [])
+    if not history:
+        return new_prompt
+
+    # Build context from history
+    context_parts = ["## 对话历史\n"]
+    for msg in history[-10:]:  # Last 10 messages for context
+        role = "用户" if msg["role"] == "user" else "Blade"
+        context_parts.append(f"{role}: {msg['content']}")
+    context_parts.append(f"\n## 当前消息\n用户: {new_prompt}")
+    context_parts.append("\n请基于以上对话历史回复。")
+    return "\n".join(context_parts)
+
+
 @app.post("/api/chat")
 async def chat_sync(req: ChatRequest):
     system = req.system_prompt or BLADE_SYSPROMPT
+    session_id = req.session_id or "default"
     try:
-        result = await chat(req.prompt, system)
+        prompt = build_prompt_with_history(session_id, req.prompt)
+        result = await chat(prompt, system)
+        # Save to history
+        if session_id not in chat_history:
+            chat_history[session_id] = []
+        chat_history[session_id].append({"role": "user", "content": req.prompt})
+        chat_history[session_id].append({"role": "assistant", "content": result})
         return {"response": result}
     except RuntimeError as e:
         raise HTTPException(502, detail=str(e))
@@ -94,40 +120,52 @@ async def chat_sync(req: ChatRequest):
 
 @app.post("/api/chat/stream")
 async def chat_sse(req: ChatRequest):
-    """Stream chat response — auto-detects search requests and injects results."""
+    """Stream chat response — with conversation history and auto web search."""
     base_system = req.system_prompt or BLADE_SYSPROMPT
+    session_id = req.session_id or "default"
 
     async def event_stream():
         yield f"data: {json.dumps({'type': 'start'}, ensure_ascii=False)}\n\n"
         try:
             prompt = req.prompt
             system_prompt = base_system
-            # Detect search intent — check raw prompt before any .lower() manipulation
-            search_keywords = ['搜索', '搜一下', '查一下', '查找', 'search', 'find', '新闻', '热点', 'news', 'trending']
-            prompt_lower = prompt.lower()
-            should_search = any(kw in prompt_lower for kw in search_keywords)
-            # Debug: log the detection
-            with open('D:\\projects\\blade\\web\\backend\\search_debug.log', 'a', encoding='utf-8') as f:
-                f.write(f'prompt="{prompt}" should_search={should_search}\n')
 
-            if should_search:
+            # Build prompt with history
+            prompt = build_prompt_with_history(session_id, prompt)
+
+            # Auto web search
+            prompt_lower = prompt.lower()
+            search_keywords = ['搜索', '搜一下', '查一下', '查找', 'search', 'find', '新闻', '热点', 'news', 'trending']
+            if any(kw in prompt_lower for kw in search_keywords):
                 from core.agent import web_search
-                query = re.sub(r'^(搜索|搜一下|查一下|查找|search|find)\s*', '', prompt, flags=re.IGNORECASE)
-                query = re.sub(r'[？?。！!，,]', '', query).strip() or prompt
+                query = re.sub(r'^(搜索|搜一下|查一下|查找|search|find)\s*', '', req.prompt, flags=re.IGNORECASE)
+                query = re.sub(r'[？?。！!，,]', '', query).strip() or req.prompt
                 search_result = await web_search(query)
-                # Direct output: return search results without going through model
                 yield f"data: {json.dumps({'type': 'token', 'text': '## 搜索结果\n\n'}, ensure_ascii=False)}\n\n"
                 for i in range(0, len(search_result), 4):
-                    sub = search_result[i:i+4]
-                    yield f"data: {json.dumps({'type': 'token', 'text': sub}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'token', 'text': search_result[i:i+4]}, ensure_ascii=False)}\n\n"
                 yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+                # Save search to history
+                if session_id not in chat_history:
+                    chat_history[session_id] = []
+                chat_history[session_id].append({"role": "user", "content": req.prompt})
+                chat_history[session_id].append({"role": "assistant", "content": f"[搜索: {query}]"})
                 return
 
+            # Normal chat
+            full_response = ""
             async for chunk in chat_stream(prompt, system_prompt):
+                full_response += chunk
                 for i in range(0, len(chunk), 3):
-                    sub = chunk[i:i+3]
-                    yield f"data: {json.dumps({'type': 'token', 'text': sub}, ensure_ascii=False)}\n\n"
+                    yield f"data: {json.dumps({'type': 'token', 'text': chunk[i:i+3]}, ensure_ascii=False)}\n\n"
             yield f"data: {json.dumps({'type': 'done'}, ensure_ascii=False)}\n\n"
+
+            # Save to history
+            if session_id not in chat_history:
+                chat_history[session_id] = []
+            chat_history[session_id].append({"role": "user", "content": req.prompt})
+            chat_history[session_id].append({"role": "assistant", "content": full_response})
+
         except Exception as e:
             yield f"data: {json.dumps({'type': 'error', 'error': str(e)}, ensure_ascii=False)}\n\n"
 
