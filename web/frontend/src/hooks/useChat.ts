@@ -4,7 +4,7 @@ import type { Message } from '../types';
 
 export function useChat() {
   const [messages, setMessages] = useState<Message[]>([{
-    id: '0', role: 'assistant', content: 'Hello! I\'m **Blade**, a thin-shell AI engineering agent.\n\nI can help with:\n- 📁 File operations\n- 💻 Code generation\n- 🔍 Web search & fetch\n- 📊 Project analysis', timestamp: Date.now(),
+    id: '0', role: 'assistant', content: '你好！我是 **Blade**，一个轻量级 AI 工程智能体。\n\n我可以帮你：\n- 📁 文件操作\n- 💻 代码生成与分析\n- 🔍 网页搜索与抓取\n- 📊 项目架构分析', timestamp: Date.now(),
   }]);
   const [isStreaming, setIsStreaming] = useState(false);
   const abortRef = useRef<AbortController | null>(null);
@@ -40,7 +40,7 @@ export function useChat() {
   }, []);
 
   const clearMessages = useCallback(() => {
-    setMessages([{ id: '0', role: 'assistant', content: 'New session started. How can I help?', timestamp: Date.now() }]);
+    setMessages([{ id: '0', role: 'assistant', content: '新会话已开始。有什么可以帮你的？', timestamp: Date.now() }]);
   }, []);
 
   return { messages, sendMessage, clearMessages, isStreaming };

@@ -83,20 +83,17 @@ async def chat_stream(prompt: str, system_prompt: str | None = None) -> AsyncGen
         cwd=str(config.BLADE_ROOT),
     )
 
-    # Read STDOUT in chunks for streaming effect
-    # Use line-based reading to avoid splitting UTF-8 multi-byte chars
+    # Read STDOUT in chunks — handle UTF-8 safely by reading larger buffers
     assert proc.stdout
-    reader = asyncio.StreamReader(protocol=None)
-    transport, _ = await asyncio.get_event_loop().connect_read_pipe(
-        lambda: asyncio.StreamReaderProtocol(reader), proc.stdout)
     try:
         while True:
-            line = await reader.readline()
-            if not line:
+            chunk = await proc.stdout.read(4096)
+            if not chunk:
                 break
-            yield line.decode('utf-8', errors='replace')
+            yield chunk.decode('utf-8', errors='replace')
     finally:
-        transport.close()
+        proc.stdout.close()
+    await proc.wait()
 
     # Check for errors
     await proc.wait()

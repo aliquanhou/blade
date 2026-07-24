@@ -53,10 +53,10 @@ function App() {
           <span className="text-lg font-bold">⚔️ Blade</span>
           <span className="flex items-center gap-1 text-xs text-gray-400">
             <span className={`w-2 h-2 rounded-full ${health?.status === 'healthy' ? 'bg-green-500' : 'bg-red-500'}`} />
-            {health ? `${health.provider} · ${health.model}` : 'connecting...'}
+            {health ? `${health.provider} · ${health.model}` : '连接中...'}
           </span>
         </div>
-        <button onClick={() => setShowSettings(true)} className="text-sm text-gray-400 hover:text-white px-3 py-1 rounded hover:bg-gray-800">⚙️ Settings</button>
+        <button onClick={() => setShowSettings(true)} className="text-sm text-gray-400 hover:text-white px-3 py-1 rounded hover:bg-gray-800">⚙️ 设置</button>
       </header>
 
       <div className="flex flex-1 overflow-hidden">
@@ -73,7 +73,7 @@ function App() {
           <div className="flex-1 overflow-y-auto p-2 text-sm">
             {sidebarTab === 'sessions' && (
               <div className="space-y-1">
-                <button onClick={clearMessages} className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-medium">+ New Chat</button>
+                <button onClick={clearMessages} className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-medium">+ 新对话</button>
                 {sessions.map((s: any) => (
                   <div key={s.id} className="px-3 py-2 bg-gray-800 rounded-lg mt-2 cursor-pointer text-xs">{s.title}</div>
                 ))}
@@ -140,7 +140,7 @@ function App() {
                 <pre className="p-3 bg-gray-900 border border-gray-700 rounded-lg text-sm overflow-auto max-h-96">{execOutput}</pre>
               </div>
             )}
-            <button onClick={() => setExecTool(null)} className="mt-auto text-xs text-gray-500 hover:text-white">← Back to chat</button>
+            <button onClick={() => setExecTool(null)} className="mt-auto text-xs text-gray-500 hover:text-white">← 返回对话</button>
           </div>
         ) : (
           <main className="flex-1 flex flex-col min-w-0">
@@ -163,11 +163,11 @@ function App() {
               <div className="flex gap-2 max-w-4xl mx-auto">
                 <textarea value={input} onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(); } }}
-                  placeholder="Type a message..." rows={1}
+                  placeholder="输入消息..." rows={1}
                   className="flex-1 bg-gray-800 border border-gray-600 rounded-xl px-4 py-3 text-sm resize-none outline-none focus:border-blue-500" />
                 <button onClick={handleSend} disabled={!input.trim() || isStreaming}
                   className="px-5 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed rounded-xl text-sm font-medium">
-                  {isStreaming ? '⋯' : 'Send'}
+                  {isStreaming ? '⋯' : '发送'}
                 </button>
               </div>
             </div>
