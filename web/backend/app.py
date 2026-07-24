@@ -102,9 +102,13 @@ async def chat_sse(req: ChatRequest):
         try:
             prompt = req.prompt
             system_prompt = base_system
-            # Detect search intent
+            # Detect search intent — check raw prompt before any .lower() manipulation
             search_keywords = ['搜索', '搜一下', '查一下', '查找', 'search', 'find', '新闻', '热点', 'news', 'trending']
-            should_search = any(kw in prompt.lower() for kw in search_keywords)
+            prompt_lower = prompt.lower()
+            should_search = any(kw in prompt_lower for kw in search_keywords)
+            # Debug: log the detection
+            with open('D:\\projects\\blade\\web\\backend\\search_debug.log', 'a', encoding='utf-8') as f:
+                f.write(f'prompt="{prompt}" should_search={should_search}\n')
 
             if should_search:
                 from core.agent import web_search
