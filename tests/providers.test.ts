@@ -69,7 +69,7 @@ describe('DeepSeek Provider', () => {
     const p = new DeepSeekProvider('test-key');
     expect(p.name).toBe('deepseek');
     expect(p.displayName).toBe('DeepSeek');
-    expect(p.getModel()).toBe('deepseek-chat');
+    expect(p.getModel()).toBe('deepseek-v4-flash');
   });
 
   it('should send chat request with correct format', async () => {
@@ -89,7 +89,7 @@ describe('DeepSeek Provider', () => {
     const callArgs = lastCall[1] as RequestInit;
     const body = JSON.parse(callArgs.body as string);
 
-    expect(body.model).toBe('deepseek-chat');
+    expect(body.model).toBe('deepseek-v4-flash');
     expect(body.messages[0].role).toBe('system');
     expect(body.messages[0].content).toBe('Be helpful');
     expect(body.messages[1].role).toBe('user');
@@ -260,10 +260,16 @@ describe('Provider Factory', () => {
   });
 
   it('should detect from environment', () => {
+    const prevAnthropic = process.env.ANTHROPIC_API_KEY;
+    const prevBlade = process.env.BLADE_API_KEY;
+    delete process.env.ANTHROPIC_API_KEY;
+    delete process.env.BLADE_API_KEY;
     process.env.DEEPSEEK_API_KEY = 'test-ds-key';
     const p = ProviderFactory.fromEnv();
     expect(p.name).toBe('deepseek');
     delete process.env.DEEPSEEK_API_KEY;
+    if (prevAnthropic) process.env.ANTHROPIC_API_KEY = prevAnthropic;
+    if (prevBlade) process.env.BLADE_API_KEY = prevBlade;
   });
 });
 
