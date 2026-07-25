@@ -93,7 +93,7 @@ export class QueryEngine {
    */
   async getProvider(): Promise<ProviderAdapter> {
     if (!this.provider) {
-      if (this.config.apiKey || this.config.model || this.config.baseUrl || this.config.provider) {
+      if (this.config.apiKey) {
         this.provider = ProviderFactory.create({
           provider: this.config.provider,
           apiKey: this.config.apiKey,

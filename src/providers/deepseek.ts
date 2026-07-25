@@ -105,7 +105,7 @@ export class DeepSeekProvider extends ProviderAdapter {
       body.tool_choice = 'auto';
     }
 
-    const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+    const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -145,7 +145,7 @@ export class DeepSeekProvider extends ProviderAdapter {
       body.tool_choice = 'auto';
     }
 
-    const res = await fetch(`${this.baseUrl}/v1/chat/completions`, {
+    const res = await fetch(`${this.baseUrl}/chat/completions`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
