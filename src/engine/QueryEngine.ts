@@ -300,7 +300,6 @@ export class QueryEngine {
         // No tool calls — done
         this.messages.push(assistantMsg);
         this.result = { content: accumulatedText, stop_reason: stopReason };
-        console.log('full answer:', accumulatedText);
 
         yield { type: 'done', completeMessage: accumulatedText, stop_reason: stopReason } as SSEEvent;
         return;

@@ -28,11 +28,14 @@ function loadConfig() {
   const config: Record<string, string> = {};
   const positional: string[] = [];
 
+  // Flags that take a value (vs boolean flags)
+  const valueFlags = new Set(['provider', 'p', 'model', 'm', 'api-key', 'apiKey', 'base-url', 'baseUrl']);
+
   for (let i = 0; i < args.length; i++) {
     const arg = args[i];
     if (arg.startsWith('--')) {
       const key = arg.slice(2);
-      if (i + 1 < args.length && !args[i + 1].startsWith('--')) {
+      if (valueFlags.has(key) && i + 1 < args.length && !args[i + 1].startsWith('--')) {
         config[key] = args[++i];
       } else {
         config[key] = 'true';
@@ -40,7 +43,7 @@ function loadConfig() {
     } else if (arg.startsWith('-') && arg.length === 2) {
       // Short flags like -p
       const key = arg.slice(1);
-      if (i + 1 < args.length && !args[i + 1].startsWith('-')) {
+      if (valueFlags.has(key) && i + 1 < args.length && !args[i + 1].startsWith('--')) {
         config[key] = args[++i];
       } else {
         config[key] = 'true';
