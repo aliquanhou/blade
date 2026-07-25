@@ -1,91 +1,149 @@
-import axios from 'axios';
-import type { HealthStatus, Tool, FileEntry, SSEEvent, ChatRequest } from '../types';
+/**
+ * ⚔️ Blade API Client
+ *
+ * 纯 fetch 实现，无外部依赖。
+ * SSE 解析 llmagent 统一规范。
+ */
 
-const api = axios.create({
-  baseURL: '/api',
-  headers: { 'Content-Type': 'application/json' },
-});
+import type { HealthStatus, Tool, FileEntry, ChatRequest, SSEEvent } from '../types';
+
+const BASE_URL = '/api';
 
 export const bladeApi = {
   health: async (): Promise<HealthStatus> => {
-    const { data } = await api.get('/health');
-    return data;
+    const resp = await fetch(`${BASE_URL}/health`);
+    return resp.json();
   },
 
   tools: async (): Promise<Tool[]> => {
-    const { data } = await api.get('/tools');
-    return data.tools;
+    const resp = await fetch(`${BASE_URL}/tools`);
+    const data = await resp.json();
+    return data.tools || [];
   },
 
   files: async (path?: string): Promise<{ path: string; entries: FileEntry[] }> => {
-    const { data } = await api.get('/files', { params: { path } });
-    return data;
+    const params = path ? `?path=${encodeURIComponent(path)}` : '';
+    const resp = await fetch(`${BASE_URL}/files${params}`);
+    return resp.json();
   },
 
   readFile: async (path: string): Promise<{ path: string; content: string; size: number }> => {
-    const { data } = await api.get(`/files/${encodeURIComponent(path)}`);
-    return data;
+    const resp = await fetch(`${BASE_URL}/files/${encodeURIComponent(path)}`);
+    return resp.json();
   },
 
   saveFile: async (path: string, content: string): Promise<void> => {
-    await api.put(`/files/${encodeURIComponent(path)}`, { path, content });
+    await fetch(`${BASE_URL}/files/${encodeURIComponent(path)}`, {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ path, content }),
+    });
   },
 
   executeTool: async (name: string, params: Record<string, any>) => {
-    const { data } = await api.post('/tools/execute', { name, params });
-    return data;
+    const resp = await fetch(`${BASE_URL}/tools/execute`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, params }),
+    });
+    return resp.json();
   },
 
   saveSettings: async (settings: { provider?: string; model?: string; apiKey?: string }) => {
-    await api.post('/settings', settings);
+    await fetch(`${BASE_URL}/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(settings),
+    });
   },
 
   sessions: async () => {
-    const { data } = await api.get('/sessions');
-    return data.sessions;
+    const resp = await fetch(`${BASE_URL}/sessions`);
+    const data = await resp.json();
+    return data.sessions || [];
   },
 
   createSession: async () => {
-    const { data } = await api.post('/sessions');
-    return data;
+    const resp = await fetch(`${BASE_URL}/sessions`, { method: 'POST' });
+    return resp.json();
   },
 
   deleteSession: async (id: string) => {
-    await api.delete(`/sessions/${id}`);
+    await fetch(`${BASE_URL}/sessions/${id}`, { method: 'DELETE' });
   },
 
+  /**
+   * SSE 流式聊天 — 解析 llmagent 统一格式
+   *
+   * 事件类型：
+   *   token       → onToken(content)
+   *   tool_use    → onToolUse(name, input)
+   *   tool_result → onToolResult(content, name, isError)
+   *   done        → onDone(completeMessage)
+   *   error       → onError(message)
+   */
   chatStream: async (
     req: ChatRequest,
-    onToken: (text: string) => void,
-    onDone: () => void,
-    onError: (err: string) => void,
+    callbacks: {
+      onToken: (text: string) => void;
+      onToolUse: (name: string, input: Record<string, unknown>) => void;
+      onToolResult: (content: string, name?: string, isError?: boolean) => void;
+      onDone: (message?: string) => void;
+      onError: (err: string) => void;
+    },
   ): Promise<void> => {
-    const response = await fetch('/api/chat/stream', {
+    const { onToken, onToolUse, onToolResult, onDone, onError } = callbacks;
+
+    const response = await fetch(`${BASE_URL}/chat/stream`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(req),
     });
-    if (!response.ok) { onError(`HTTP ${response.status}`); return; }
+
+    if (!response.ok) {
+      onError(`HTTP ${response.status}`);
+      return;
+    }
+
     const reader = response.body!.getReader();
     const decoder = new TextDecoder();
     let buffer = '';
+
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
+
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
       buffer = lines.pop() || '';
+
       for (const line of lines) {
-        const t = line.trim();
-        if (!t.startsWith('data: ')) continue;
+        const trimmed = line.trim();
+        if (!trimmed.startsWith('data: ')) continue;
+
         try {
-          const event: SSEEvent = JSON.parse(t.slice(6));
+          const event: SSEEvent = JSON.parse(trimmed.slice(6));
+
           switch (event.type) {
-            case 'token': onToken(event.text || ''); break;
-            case 'done': onDone(); break;
-            case 'error': onError(event.error || 'Unknown error'); break;
+            case 'token':
+              onToken(event.content || '');
+              break;
+            case 'tool_use':
+              onToolUse(event.name, event.input || {});
+              break;
+            case 'tool_result':
+              onToolResult(event.content, event.name, event.is_error);
+              break;
+            case 'done':
+              onDone(event.completeMessage);
+              break;
+            case 'error':
+              onError(event.error || 'Unknown error');
+              break;
           }
-        } catch { /* skip */ }
+        } catch {
+          // Skip malformed JSON lines
+        }
       }
     }
   },

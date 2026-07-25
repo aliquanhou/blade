@@ -1,7 +1,18 @@
-import { CodeBlock } from './CodeBlock';
-import type { Message } from '../../stores/chatStore';
+/**
+ * ⚔️ MessageItem — 消息渲染组件
+ *
+ * 支持文本、Markdown、工具调用卡片。
+ * 解析 llmagent 统一 SSE 格式生成的消息。
+ */
 
-interface Props { message: Message; isStreaming?: boolean; }
+import { CodeBlock } from './CodeBlock';
+import { ToolCallCard } from './ToolCallCard';
+import type { Message } from '../../types';
+
+interface Props {
+  message: Message;
+  isStreaming?: boolean;
+}
 
 function renderMarkdown(text: string) {
   if (!text) return null;
@@ -71,22 +82,55 @@ function renderInline(text: string, key: number): JSX.Element {
 
 export function MessageItem({ message, isStreaming }: Props) {
   const isUser = message.role === 'user';
-  const time = new Date(message.timestamp).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' });
+  const isTool = message.role === 'tool';
+  const time = new Date(message.timestamp).toLocaleTimeString('zh-CN', {
+    hour: '2-digit',
+    minute: '2-digit',
+  });
+
+  // Tool messages are rendered inline via ToolCallCard in the assistant message
+  if (isTool) return null;
 
   return (
     <div className={`flex gap-3 ${isUser ? 'justify-end' : ''}`}>
       {!isUser && (
-        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-sm shrink-0 mt-1">B</div>
+        <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-sm shrink-0 mt-1">
+          B
+        </div>
       )}
       <div className={`max-w-[80%] ${isUser ? 'bg-blue-600 rounded-2xl rounded-br-sm px-4 py-2.5' : 'py-1'}`}>
+        {/* Text content */}
         <div className={`text-sm leading-relaxed ${isUser ? 'text-white' : 'text-gray-100'}`}>
-          {isUser ? message.content : renderMarkdown(message.content || '')}
-          {isStreaming && !message.content && <span className="typing-cursor" />}
+          {isUser ? (
+            message.content
+          ) : (
+            <>
+              {renderMarkdown(message.content || '')}
+              {isStreaming && !message.content && <span className="typing-cursor" />}
+            </>
+          )}
         </div>
-        <div className={`text-xs mt-1 ${isUser ? 'text-blue-200' : 'text-gray-500'}`}>{time}{isStreaming ? ' · 输入中...' : ''}</div>
+
+        {/* Tool calls */}
+        {message.toolCalls && message.toolCalls.length > 0 && (
+          <div className="mt-2 space-y-2">
+            {message.toolCalls.map((tc, i) => (
+              <ToolCallCard key={`${tc.name}-${i}`} toolCall={tc} />
+            ))}
+          </div>
+        )}
+
+        {/* Timestamp / status */}
+        <div className={`text-xs mt-1 ${isUser ? 'text-blue-200' : 'text-gray-500'}`}>
+          {time}
+          {isStreaming ? ' · 输入中...' : ''}
+        </div>
       </div>
+
       {isUser && (
-        <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center text-sm shrink-0 mt-1">U</div>
+        <div className="w-8 h-8 rounded-lg bg-green-600 flex items-center justify-center text-sm shrink-0 mt-1">
+          U
+        </div>
       )}
     </div>
   );

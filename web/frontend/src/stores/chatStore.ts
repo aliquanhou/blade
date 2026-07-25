@@ -1,12 +1,12 @@
+/**
+ * ⚔️ Chat Store — Zustand state management
+ *
+ * 支持 llmagent 标准事件：token / tool_use / tool_result / done
+ */
+
 import { create } from 'zustand';
 import { bladeApi } from '../api/client';
-
-export interface Message {
-  id: string;
-  role: 'user' | 'assistant' | 'system';
-  content: string;
-  timestamp: number;
-}
+import type { Message, ToolCallInfo } from '../types';
 
 export interface Session {
   id: string;
@@ -32,7 +32,8 @@ interface ChatState {
 export const useChatStore = create<ChatState>((set, get) => ({
   messages: {
     'default': [{
-      id: 'welcome', role: 'assistant',
+      id: 'welcome',
+      role: 'assistant',
       content: '你好！我是 **Blade**，一个轻量级 AI 工程智能体。\n\n我可以帮你：\n- 📁 文件操作\n- 💻 代码生成与分析\n- 🔍 网页搜索与抓取\n- 📊 项目架构分析',
       timestamp: Date.now(),
     }],
@@ -46,7 +47,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const sessions = await bladeApi.sessions();
       set({ sessions });
-    } catch {}
+    } catch { /* ignore */ }
   },
 
   createSession: async () => {
@@ -55,13 +56,17 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set(state => ({
         sessions: [...state.sessions, session],
         currentSessionId: session.id,
-        messages: { ...state.messages, [session.id]: [{
-          id: 'welcome-' + session.id, role: 'assistant',
-          content: '新会话已开始。有什么可以帮你的？',
-          timestamp: Date.now(),
-        }]},
+        messages: {
+          ...state.messages,
+          [session.id]: [{
+            id: 'welcome-' + session.id,
+            role: 'assistant',
+            content: '新会话已开始。有什么可以帮你的？',
+            timestamp: Date.now(),
+          }],
+        },
       }));
-    } catch {}
+    } catch { /* ignore */ }
   },
 
   switchSession: (id: string) => {
@@ -69,11 +74,15 @@ export const useChatStore = create<ChatState>((set, get) => ({
       if (!state.messages[id]) {
         return {
           currentSessionId: id,
-          messages: { ...state.messages, [id]: [{
-            id: 'welcome-' + id, role: 'assistant',
-            content: '新会话已开始。有什么可以帮你的？',
-            timestamp: Date.now(),
-          }]},
+          messages: {
+            ...state.messages,
+            [id]: [{
+              id: 'welcome-' + id,
+              role: 'assistant',
+              content: '新会话已开始。有什么可以帮你的？',
+              timestamp: Date.now(),
+            }],
+          },
         };
       }
       return { currentSessionId: id };
@@ -86,48 +95,113 @@ export const useChatStore = create<ChatState>((set, get) => ({
       set(state => {
         const { [id]: _, ...rest } = state.messages;
         const newId = state.currentSessionId === id ? 'default' : state.currentSessionId;
-        return { messages: rest, currentSessionId: newId, sessions: state.sessions.filter(s => s.id !== id) };
+        return {
+          messages: rest,
+          currentSessionId: newId,
+          sessions: state.sessions.filter(s => s.id !== id),
+        };
       });
-    } catch {}
+    } catch { /* ignore */ }
   },
 
   sendMessage: async (content: string) => {
     const { currentSessionId } = get();
     const msgId = Date.now().toString();
-    const userMsg: Message = { id: msgId, role: 'user', content, timestamp: Date.now() };
-    const assistantMsg: Message = { id: 'resp-' + msgId, role: 'assistant', content: '', timestamp: Date.now() };
+    const userMsg: Message = {
+      id: msgId,
+      role: 'user',
+      content,
+      timestamp: Date.now(),
+    };
+    const assistantMsg: Message = {
+      id: 'resp-' + msgId,
+      role: 'assistant',
+      content: '',
+      timestamp: Date.now(),
+      toolCalls: [],
+    };
 
     set(state => ({
       messages: {
         ...state.messages,
-        [currentSessionId]: [...(state.messages[currentSessionId] || []), userMsg, assistantMsg],
+        [currentSessionId]: [
+          ...(state.messages[currentSessionId] || []),
+          userMsg,
+          assistantMsg,
+        ],
       },
       isStreaming: true,
       streamingText: '',
     }));
 
     let accumulated = '';
+    const currentToolCalls: ToolCallInfo[] = [];
+
     await bladeApi.chatStream(
-      { prompt: content },
-      (token) => {
-        accumulated += token;
-        set(state => {
-          const msgs = [...(state.messages[currentSessionId] || [])];
-          const last = { ...msgs[msgs.length - 1], content: accumulated };
-          msgs[msgs.length - 1] = last;
-          return { messages: { ...state.messages, [currentSessionId]: msgs }, streamingText: accumulated };
-        });
-      },
-      () => {
-        set({ isStreaming: false, streamingText: '' });
-      },
-      (error) => {
-        set(state => {
-          const msgs = [...(state.messages[currentSessionId] || [])];
-          const last = { ...msgs[msgs.length - 1], content: `错误：${error}` };
-          msgs[msgs.length - 1] = last;
-          return { messages: { ...state.messages, [currentSessionId]: msgs }, isStreaming: false, streamingText: '' };
-        });
+      { prompt: content, session_id: currentSessionId },
+      {
+        onToken: (token) => {
+          accumulated += token;
+          set(state => {
+            const msgs = [...(state.messages[currentSessionId] || [])];
+            const last = { ...msgs[msgs.length - 1], content: accumulated, toolCalls: currentToolCalls };
+            msgs[msgs.length - 1] = last;
+            return {
+              messages: { ...state.messages, [currentSessionId]: msgs },
+              streamingText: accumulated,
+            };
+          });
+        },
+        onToolUse: (name, input) => {
+          const toolCall: ToolCallInfo = {
+            name,
+            input,
+            status: 'running',
+          };
+          currentToolCalls.push(toolCall);
+          set(state => {
+            const msgs = [...(state.messages[currentSessionId] || [])];
+            const last = { ...msgs[msgs.length - 1], toolCalls: [...currentToolCalls] };
+            msgs[msgs.length - 1] = last;
+            return { messages: { ...state.messages, [currentSessionId]: msgs } };
+          });
+        },
+        onToolResult: (resultContent, name, isError) => {
+          // Update the matching tool call status
+          const tc = currentToolCalls.find(t => t.name === name && t.status === 'running');
+          if (tc) {
+            tc.status = isError ? 'failed' : 'completed';
+            tc.result = resultContent;
+          }
+          set(state => {
+            const msgs = [...(state.messages[currentSessionId] || [])];
+            const last = { ...msgs[msgs.length - 1], toolCalls: [...currentToolCalls] };
+            msgs[msgs.length - 1] = last;
+            return { messages: { ...state.messages, [currentSessionId]: msgs } };
+          });
+        },
+        onDone: (completeMessage) => {
+          set({
+            isStreaming: false,
+            streamingText: '',
+          });
+        },
+        onError: (error) => {
+          set(state => {
+            const msgs = [...(state.messages[currentSessionId] || [])];
+            const last = {
+              ...msgs[msgs.length - 1],
+              content: accumulated || `错误：${error}`,
+              toolCalls: currentToolCalls,
+            };
+            msgs[msgs.length - 1] = last;
+            return {
+              messages: { ...state.messages, [currentSessionId]: msgs },
+              isStreaming: false,
+              streamingText: '',
+            };
+          });
+        },
       },
     );
   },
@@ -138,7 +212,12 @@ export const useChatStore = create<ChatState>((set, get) => ({
       currentSessionId: id,
       messages: {
         ...state.messages,
-        [id]: [{ id: 'welcome-' + id, role: 'assistant', content: '新会话已开始。有什么可以帮你的？', timestamp: Date.now() }],
+        [id]: [{
+          id: 'welcome-' + id,
+          role: 'assistant',
+          content: '新会话已开始。有什么可以帮你的？',
+          timestamp: Date.now(),
+        }],
       },
     }));
   },

@@ -4,7 +4,7 @@
   "description": "⚔️ Blade — 薄壳 AI 工程智能体。模型负责智能，壳只负责传递。",
   "type": "module",
   "bin": {
-    "blade": "bin/blade.js"
+    "blade": "bin/cli.ts"
   },
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -16,12 +16,15 @@
     "./providers/*": {
       "types": "./dist/providers/*.d.ts",
       "import": "./dist/providers/*.js"
+    },
+    "./engine/*": {
+      "types": "./dist/engine/*.d.ts",
+      "import": "./dist/engine/*.js"
     }
   },
   "files": [
     "dist/",
     "bin/",
-    "engine/blade-engine.js",
     "config/",
     "BLADE.md",
     "README.md",
@@ -66,15 +69,14 @@
   "scripts": {
     "build": "bun run build.ts",
     "build:dev": "BLADE_DEV=1 bun run build.ts",
-    "start": "node bin/blade.js",
-    "blade": "node bin/blade.js",
+    "start": "bun run web/server/src/index.ts",
+    "cli": "bun run bin/cli.ts",
+    "blade": "bun run bin/cli.ts",
+    "server": "bun run web/server/src/index.ts",
     "test": "bun test",
     "test:all": "bun test tests/providers.test.ts tests/build.test.ts",
     "test:providers": "bun test tests/providers.test.ts",
     "test:build": "bun test tests/build.test.ts",
-    "patch": "node bin/patch-engine.js",
-    "kb": "node bin/update-kb.js",
-    "proxy": "node src/providers/proxy-server.ts",
     "clean": "rm -rf dist",
     "prepublishOnly": "bun run build && bun test tests/build.test.ts",
     "version": "git add -A",

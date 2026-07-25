@@ -34,6 +34,7 @@ function findEntryPoints(dir: string): EntryPoint[] {
   const bladeDirs = [
     'src/index.ts',
     'src/providers/',
+    'src/engine/',
   ];
 
   const entries: EntryPoint[] = [];
@@ -87,7 +88,7 @@ async function main() {
   if (tscResult.status !== 0) {
     if (!isDev) {
       // Non-fatal: declarations are nice-to-have
-      console.log('  (type declarations skipped ‚Ä?tsc not available)');
+      console.log('  (type declarations skipped ÔøΩ?tsc not available)');
     } else {
       console.error('  tsc stderr:', tscResult.stderr);
     }
@@ -117,7 +118,7 @@ async function main() {
   const result = await build(config);
 
   if (!result.success) {
-    console.error('\n‚ù?Build failed:');
+    console.error('\nÔøΩ?Build failed:');
     for (const log of result.logs) {
       // Filter out info-level logs
       if (log.kind === 'buildError' || log.kind === 'resolveError') {
@@ -133,7 +134,7 @@ async function main() {
 
   console.log(`\n  ${jsFiles} JS files, ${result.outputs.length} output chunks`);
   console.log(`  Total size: ${formatSize(totalSize)}`);
-  console.log(`\n ‚ú?Build complete in ${((performance.now() - start) / 1000).toFixed(2)}s`);
+  console.log(`\n ÔøΩ?Build complete in ${((performance.now() - start) / 1000).toFixed(2)}s`);
 
   if (isDev) {
     console.log('\n  Output files:');
