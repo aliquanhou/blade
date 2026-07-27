@@ -2,7 +2,6 @@ import { useEffect, useState } from 'react';
 import { useChatStore } from './stores/chatStore';
 import { useToolStore } from './stores/toolStore';
 import { MessageItem } from './components/chat/MessageItem';
-import { CodeBlock } from './components/chat/CodeBlock';
 import { bladeApi } from './api/client';
 import type { HealthStatus, Tool, FileEntry } from './types';
 

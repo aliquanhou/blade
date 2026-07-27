@@ -180,7 +180,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
             return { messages: { ...state.messages, [currentSessionId]: msgs } };
           });
         },
-        onDone: (completeMessage) => {
+        onDone: (_completeMessage) => {
           set({
             isStreaming: false,
             streamingText: '',

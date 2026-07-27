@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback } from 'react';
+import { useState, useCallback } from 'react';
 import { bladeApi } from '../api/client';
 import type { Message } from '../types';
 
@@ -7,7 +7,6 @@ export function useChat() {
     id: '0', role: 'assistant', content: '你好！我是 **Blade**，一个轻量级 AI 工程智能体。\n\n我可以帮你：\n- 📁 文件操作\n- 💻 代码生成与分析\n- 🔍 网页搜索与抓取\n- 📊 项目架构分析', timestamp: Date.now(),
   }]);
   const [isStreaming, setIsStreaming] = useState(false);
-  const abortRef = useRef<AbortController | null>(null);
 
   const sendMessage = useCallback(async (content: string) => {
     const userMsg: Message = { id: Date.now().toString(), role: 'user', content, timestamp: Date.now() };
@@ -19,22 +18,26 @@ export function useChat() {
     let accumulated = '';
     await bladeApi.chatStream(
       { prompt: content },
-      (token) => {
-        accumulated += token;
-        setMessages(prev => {
-          const rest = prev.slice(0, -1);
-          return [...rest, { ...assistantMsg, content: accumulated }];
-        });
-      },
-      () => {
-        setIsStreaming(false);
-      },
-      (error) => {
-        setMessages(prev => {
-          const rest = prev.slice(0, -1);
-          return [...rest, { ...assistantMsg, content: `Error: ${error}` }];
-        });
-        setIsStreaming(false);
+      {
+        onToken: (token: string) => {
+          accumulated += token;
+          setMessages(prev => {
+            const rest = prev.slice(0, -1);
+            return [...rest, { ...assistantMsg, content: accumulated }];
+          });
+        },
+        onToolUse: () => { /* not used in this hook */ },
+        onToolResult: () => { /* not used in this hook */ },
+        onDone: () => {
+          setIsStreaming(false);
+        },
+        onError: (error: string) => {
+          setMessages(prev => {
+            const rest = prev.slice(0, -1);
+            return [...rest, { ...assistantMsg, content: `Error: ${error}` }];
+          });
+          setIsStreaming(false);
+        },
       },
     );
   }, []);

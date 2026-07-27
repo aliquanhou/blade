@@ -210,7 +210,7 @@ export class DeepSeekProvider extends ProviderAdapter {
                 }
                 const existing = toolCalls.get(idx)!;
                 if (tc.id) existing.id = tc.id;
-                if (tc.function?.name) existing.name += tc.function.name;
+                if (tc.function?.name) existing.name = tc.function.name;  // = not +=: name comes complete, never split
                 if (tc.function?.arguments) existing.args += tc.function.arguments;
               }
             }

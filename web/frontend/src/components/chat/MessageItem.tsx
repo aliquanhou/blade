@@ -8,6 +8,7 @@
 import { CodeBlock } from './CodeBlock';
 import { ToolCallCard } from './ToolCallCard';
 import type { Message } from '../../types';
+import type { JSX } from 'react';
 
 interface Props {
   message: Message;

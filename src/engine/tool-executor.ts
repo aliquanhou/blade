@@ -508,36 +508,96 @@ async function cpuInfoTool(_input: Record<string, unknown>): Promise<ToolResult>
 
 export const BUILTIN_TOOLS: ToolDef[] = [
   // File operations (5)
-  { name: 'read_file', description: '读取文件内容', category: 'file', isConcurrencySafe: true, execute: readFileTool },
-  { name: 'write_file', description: '创建或写入文件', category: 'file', isConcurrencySafe: false, execute: writeFileTool },
-  { name: 'edit_file', description: '替换文件中的文本', category: 'file', isConcurrencySafe: false, execute: editFileTool },
-  { name: 'delete_file', description: '删除文件', category: 'file', isConcurrencySafe: false, execute: deleteFileTool },
-  { name: 'list_files', description: '列出目录内容', category: 'file', isConcurrencySafe: true, execute: listFilesTool },
+  {
+    name: 'read_file', description: '读取文件内容', category: 'file', isConcurrencySafe: true, execute: readFileTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: '文件路径' } }, required: ['path'] },
+  },
+  {
+    name: 'write_file', description: '创建或写入文件', category: 'file', isConcurrencySafe: false, execute: writeFileTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: '文件路径' }, content: { type: 'string', description: '文件内容' } }, required: ['path', 'content'] },
+  },
+  {
+    name: 'edit_file', description: '替换文件中的文本', category: 'file', isConcurrencySafe: false, execute: editFileTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: '文件路径' }, old_text: { type: 'string', description: '被替换的文本' }, new_text: { type: 'string', description: '替换后的文本' } }, required: ['path', 'old_text', 'new_text'] },
+  },
+  {
+    name: 'delete_file', description: '删除文件', category: 'file', isConcurrencySafe: false, execute: deleteFileTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: '文件路径' } }, required: ['path'] },
+  },
+  {
+    name: 'list_files', description: '列出目录内容', category: 'file', isConcurrencySafe: true, execute: listFilesTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: '目录路径（默认当前目录）' } } },
+  },
 
   // Code analysis (3)
-  { name: 'grep_search', description: '搜索文件内容', category: 'code', isConcurrencySafe: true, execute: grepSearchTool },
-  { name: 'analyze_python', description: '分析 Python 代码结构', category: 'code', isConcurrencySafe: true, execute: analyzePythonTool },
-  { name: 'count_lines', description: '统计代码行数', category: 'code', isConcurrencySafe: true, execute: countLinesTool },
+  {
+    name: 'grep_search', description: '搜索文件内容', category: 'code', isConcurrencySafe: true, execute: grepSearchTool,
+    inputSchema: { type: 'object', properties: { pattern: { type: 'string', description: '搜索模式' }, path: { type: 'string', description: '搜索路径（默认当前目录）' } }, required: ['pattern'] },
+  },
+  {
+    name: 'analyze_python', description: '分析 Python 代码结构（AST 解析）', category: 'code', isConcurrencySafe: true, execute: analyzePythonTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Python 文件路径' } }, required: ['path'] },
+  },
+  {
+    name: 'count_lines', description: '统计代码行数', category: 'code', isConcurrencySafe: true, execute: countLinesTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: '文件或目录路径' } } },
+  },
 
   // Shell (2)
-  { name: 'run_bash', description: '执行 Shell 命令', category: 'shell', isConcurrencySafe: false, execute: runBashTool },
-  { name: 'system_info', description: '查看系统信息', category: 'shell', isConcurrencySafe: true, execute: systemInfoTool },
+  {
+    name: 'run_bash', description: '执行 Shell 命令', category: 'shell', isConcurrencySafe: false, execute: runBashTool,
+    inputSchema: { type: 'object', properties: { command: { type: 'string', description: '要执行的 Shell 命令' } }, required: ['command'] },
+  },
+  {
+    name: 'system_info', description: '查看系统信息（OS / CPU / 内存等）', category: 'shell', isConcurrencySafe: true, execute: systemInfoTool,
+    inputSchema: { type: 'object', properties: {} },
+  },
 
   // Web (2)
-  { name: 'web_get', description: '获取网页内容', category: 'web', isConcurrencySafe: true, execute: webGetTool },
-  { name: 'web_search', description: '搜索网络', category: 'web', isConcurrencySafe: true, execute: webSearchTool },
+  {
+    name: 'web_get', description: '获取网页内容', category: 'web', isConcurrencySafe: true, execute: webGetTool,
+    inputSchema: { type: 'object', properties: { url: { type: 'string', description: '网页 URL' } }, required: ['url'] },
+  },
+  {
+    name: 'web_search', description: '搜索网络信息', category: 'web', isConcurrencySafe: true, execute: webSearchTool,
+    inputSchema: { type: 'object', properties: { query: { type: 'string', description: '搜索关键词' } }, required: ['query'] },
+  },
 
   // Git (4)
-  { name: 'git_status', description: '查看 Git 状态', category: 'git', isConcurrencySafe: true, execute: gitStatusTool },
-  { name: 'git_log', description: '查看 Git 日志', category: 'git', isConcurrencySafe: true, execute: gitLogTool },
-  { name: 'git_diff', description: '查看 Git 差异', category: 'git', isConcurrencySafe: true, execute: gitDiffTool },
-  { name: 'git_branches', description: '查看 Git 分支', category: 'git', isConcurrencySafe: true, execute: gitBranchesTool },
+  {
+    name: 'git_status', description: '查看 Git 工作区状态', category: 'git', isConcurrencySafe: true, execute: gitStatusTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Git 仓库路径' } } },
+  },
+  {
+    name: 'git_log', description: '查看 Git 提交历史', category: 'git', isConcurrencySafe: true, execute: gitLogTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Git 仓库路径' }, count: { type: 'number', description: '显示条数（默认 10）' } } },
+  },
+  {
+    name: 'git_diff', description: '查看 Git 工作区差异', category: 'git', isConcurrencySafe: true, execute: gitDiffTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Git 仓库路径' } } },
+  },
+  {
+    name: 'git_branches', description: '查看 Git 分支列表', category: 'git', isConcurrencySafe: true, execute: gitBranchesTool,
+    inputSchema: { type: 'object', properties: { path: { type: 'string', description: 'Git 仓库路径' } } },
+  },
 
   // System (5)
-  { name: 'list_processes', description: '列出进程', category: 'system', isConcurrencySafe: true, execute: listProcessesTool },
-  { name: 'disk_usage', description: '磁盘使用情况', category: 'system', isConcurrencySafe: true, execute: diskUsageTool },
-  { name: 'memory_usage', description: '内存使用情况', category: 'system', isConcurrencySafe: true, execute: memoryUsageTool },
-  { name: 'cpu_info', description: 'CPU 信息', category: 'system', isConcurrencySafe: true, execute: cpuInfoTool },
+  {
+    name: 'list_processes', description: '列出当前运行的进程', category: 'system', isConcurrencySafe: true, execute: listProcessesTool,
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'disk_usage', description: '查看磁盘使用情况', category: 'system', isConcurrencySafe: true, execute: diskUsageTool,
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'memory_usage', description: '查看内存使用情况', category: 'system', isConcurrencySafe: true, execute: memoryUsageTool,
+    inputSchema: { type: 'object', properties: {} },
+  },
+  {
+    name: 'cpu_info', description: '查看 CPU 信息', category: 'system', isConcurrencySafe: true, execute: cpuInfoTool,
+    inputSchema: { type: 'object', properties: {} },
+  },
 ];
 
 // ============================================================

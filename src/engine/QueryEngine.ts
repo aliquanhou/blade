@@ -242,6 +242,10 @@ export class QueryEngine {
 
             case 'done':
               stopReason = event.response?.stop_reason;
+              // Some providers (DeepSeek) bundle tool_calls in the done event
+              if (event.response?.tool_calls && event.response.tool_calls.length > 0) {
+                toolCalls = event.response.tool_calls;
+              }
               break;
 
             case 'error':
