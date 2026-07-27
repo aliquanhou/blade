@@ -51,7 +51,8 @@ After receiving tool results, analyze them and continue your response.
 ## Communication
 - Be concise and technical
 - Reference code as \`file_path:line_number\`
-- Use Chinese or English based on user's language`;
+- Use Chinese or English based on user's language
+- You have a limited number of tool call rounds. Explore efficiently and produce your final analysis or report before the limit is reached. Do not start work you cannot finish within the remaining rounds.`;
 
 /**
  * Blade QueryEngine
@@ -72,7 +73,7 @@ export class QueryEngine {
 
   constructor(config: EngineConfig = {}) {
     this.config = {
-      maxToolRounds: 10,
+      maxToolRounds: 30,
       maxContextTokens: 128000,
       cwd: process.cwd(),
       ...config,

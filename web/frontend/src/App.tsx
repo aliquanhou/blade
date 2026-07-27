@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useChatStore } from './stores/chatStore';
 import { useToolStore } from './stores/toolStore';
 import { MessageItem } from './components/chat/MessageItem';
+import { StatusBar } from './components/chat/StatusBar';
 import { bladeApi } from './api/client';
 import type { HealthStatus, Tool, FileEntry } from './types';
 
@@ -23,10 +24,27 @@ function App() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const currentMessages = messages[currentSessionId] || [];
 
-  // Auto-scroll on new messages or streaming
+  // Track last event time for stuck detection
+  const [streamStuck, setStreamStuck] = useState(false);
+  const lastEventRef = useRef(Date.now());
+
+  // Auto-scroll + update last event timestamp
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [currentMessages, isStreaming]);
+    if (isStreaming) {
+      lastEventRef.current = Date.now();
+      if (streamStuck) setStreamStuck(false);
+    }
+  }, [currentMessages]);
+
+  // Stuck detection: polls every 5s when streaming, warns if 30s idle
+  useEffect(() => {
+    if (!isStreaming) { setStreamStuck(false); return; }
+    const id = setInterval(() => {
+      if (Date.now() - lastEventRef.current > 30_000) setStreamStuck(true);
+    }, 5_000);
+    return () => clearInterval(id);
+  }, [isStreaming]);
 
   useEffect(() => {
     bladeApi.health().then(setHealth).catch(() => {});
@@ -168,12 +186,8 @@ function App() {
             {currentMessages.map(msg => (
               <MessageItem key={msg.id} message={msg} isStreaming={isStreaming && msg.id === currentMessages[currentMessages.length-1]?.id && msg.role === 'assistant'} />
             ))}
-            {isStreaming && currentMessages.length > 0 && !currentMessages[currentMessages.length-1]?.content && (
-              <div className="flex gap-3">
-                <div className="w-8 h-8 rounded-lg bg-blue-600 flex items-center justify-center text-sm shrink-0">B</div>
-                <div className="py-1 text-sm text-gray-400"><span className="typing-cursor">思考中</span></div>
-              </div>
-            )}
+            {/* 工作状态指示器 */}
+            <StatusBar isStreaming={isStreaming} streamStuck={streamStuck} messages={currentMessages} />
             <div ref={bottomRef} />
           </div>
 
