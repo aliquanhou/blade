@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { useChatStore } from './stores/chatStore';
 import { useToolStore } from './stores/toolStore';
 import { MessageItem } from './components/chat/MessageItem';
@@ -18,6 +18,15 @@ function App() {
   const [settingsProvider, setSettingsProvider] = useState('deepseek');
   const [settingsModel, setSettingsModel] = useState('deepseek-v4-flash');
   const [settingsApiKey, setSettingsApiKey] = useState('');
+
+  const chatRef = useRef<HTMLDivElement>(null);
+  const bottomRef = useRef<HTMLDivElement>(null);
+  const currentMessages = messages[currentSessionId] || [];
+
+  // Auto-scroll on new messages or streaming
+  useEffect(() => {
+    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [currentMessages, isStreaming]);
 
   useEffect(() => {
     bladeApi.health().then(setHealth).catch(() => {});
@@ -43,8 +52,6 @@ function App() {
     setShowSettings(false);
     bladeApi.health().then(setHealth);
   };
-
-  const currentMessages = messages[currentSessionId] || [];
 
   const fileIcon = (name: string) => {
     const ext = name.split('.').pop();
@@ -157,7 +164,7 @@ function App() {
 
         {/* Main chat */}
         <main className="flex-1 flex flex-col min-w-0">
-          <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <div ref={chatRef} className="flex-1 overflow-y-auto p-4 space-y-4">
             {currentMessages.map(msg => (
               <MessageItem key={msg.id} message={msg} isStreaming={isStreaming && msg.id === currentMessages[currentMessages.length-1]?.id && msg.role === 'assistant'} />
             ))}
@@ -167,6 +174,7 @@ function App() {
                 <div className="py-1 text-sm text-gray-400"><span className="typing-cursor">思考中</span></div>
               </div>
             )}
+            <div ref={bottomRef} />
           </div>
 
           <div className="border-t border-gray-700 p-4 bg-gray-900">

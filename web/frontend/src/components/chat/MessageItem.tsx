@@ -100,6 +100,15 @@ export function MessageItem({ message, isStreaming }: Props) {
         </div>
       )}
       <div className={`max-w-[80%] ${isUser ? 'bg-blue-600 rounded-2xl rounded-br-sm px-4 py-2.5' : 'py-1'}`}>
+        {/* Tool calls — 放在文本前面，滚动到底部先看到执行的工具，再看到报告 */}
+        {message.toolCalls && message.toolCalls.length > 0 && (
+          <div className="mb-2 space-y-2">
+            {message.toolCalls.map((tc, i) => (
+              <ToolCallCard key={`${tc.name}-${i}`} toolCall={tc} />
+            ))}
+          </div>
+        )}
+
         {/* Text content */}
         <div className={`text-sm leading-relaxed ${isUser ? 'text-white' : 'text-gray-100'}`}>
           {isUser ? (
@@ -111,15 +120,6 @@ export function MessageItem({ message, isStreaming }: Props) {
             </>
           )}
         </div>
-
-        {/* Tool calls */}
-        {message.toolCalls && message.toolCalls.length > 0 && (
-          <div className="mt-2 space-y-2">
-            {message.toolCalls.map((tc, i) => (
-              <ToolCallCard key={`${tc.name}-${i}`} toolCall={tc} />
-            ))}
-          </div>
-        )}
 
         {/* Timestamp / status */}
         <div className={`text-xs mt-1 ${isUser ? 'text-blue-200' : 'text-gray-500'}`}>
