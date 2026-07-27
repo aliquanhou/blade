@@ -7,7 +7,7 @@ import { bladeApi } from './api/client';
 import type { HealthStatus, Tool, FileEntry } from './types';
 
 function App() {
-  const { messages, currentSessionId, isStreaming, sendMessage, createSession, switchSession, deleteSession, loadSessions, sessions, clearMessages } = useChatStore();
+  const { messages, currentSessionId, isStreaming, sendMessage, createSession, switchSession, deleteSession, loadSessions, sessions } = useChatStore();
   const [input, setInput] = useState('');
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [tools, setTools] = useState<Tool[]>([]);
@@ -112,13 +112,14 @@ function App() {
             <div className="flex-1 overflow-y-auto p-2 text-sm">
               {sidebarTab === 'sessions' && (
                 <div className="space-y-1">
-                  <button onClick={() => { clearMessages(); createSession(); }} className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-medium">+ 新会话</button>
-                  <div onClick={() => switchSession('default')} className={`mt-2 px-3 py-2 rounded-lg cursor-pointer text-xs ${currentSessionId === 'default' ? 'bg-gray-700' : 'hover:bg-gray-800'}`}>默认会话</div>
-                  {sessions.map(s => (
+                  <button onClick={async () => { await createSession(); }} className="w-full py-2 px-3 bg-blue-600 hover:bg-blue-700 rounded-lg text-xs font-medium">+ 新会话</button>
+                  <div onClick={() => switchSession('default')} className={`mt-2 px-3 py-2 rounded-lg cursor-pointer text-xs ${currentSessionId === 'default' ? 'bg-gray-700' : 'hover:bg-gray-800'}`}>📌 默认</div>
+                  {sessions.filter(s => s.id !== 'default').map(s => (
                     <div key={s.id} onClick={() => switchSession(s.id)}
                       className={`flex items-center justify-between px-3 py-2 rounded-lg cursor-pointer text-xs ${currentSessionId === s.id ? 'bg-gray-700' : 'hover:bg-gray-800'}`}>
-                      <span className="truncate">{s.title}</span>
-                      <button onClick={e => { e.stopPropagation(); deleteSession(s.id); }} className="text-gray-500 hover:text-red-400 ml-1">×</button>
+                      <span className="truncate flex-1">{s.title}</span>
+                      <span className="text-[10px] text-gray-600 mr-1">{new Date(s.updated || s.created).toLocaleTimeString('zh-CN', { hour: '2-digit', minute: '2-digit' })}</span>
+                      <button onClick={e => { e.stopPropagation(); deleteSession(s.id); }} className="text-gray-500 hover:text-red-400 ml-1 shrink-0">×</button>
                     </div>
                   ))}
                 </div>

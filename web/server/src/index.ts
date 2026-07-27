@@ -37,8 +37,50 @@ const FRONTEND_DIST = resolve(ROOT, 'web', 'frontend', 'dist');
 const PORT = parseInt(process.env.PORT || '3001', 10);
 const HOST = process.env.HOST || '0.0.0.0';
 
-// Session store (in-memory)
+// Session store (in-memory engines)
 const sessions = new Map<string, QueryEngine>();
+
+// ============================================================
+// Session Persistence — JSON 文件存储，重启不丢失
+// ============================================================
+
+interface SessionMeta {
+  id: string;
+  title: string;
+  created: string;
+  updated: string;
+}
+
+const DATA_DIR = resolve(ROOT, 'data', 'sessions');
+const SESSIONS_FILE = resolve(DATA_DIR, 'sessions.json');
+
+function ensureDataDir(): void {
+  mkdirSync(DATA_DIR, { recursive: true });
+}
+
+function loadSessionList(): SessionMeta[] {
+  ensureDataDir();
+  try {
+    return JSON.parse(readFileSync(SESSIONS_FILE, 'utf-8'));
+  } catch { return []; }
+}
+
+function saveSessionList(list: SessionMeta[]): void {
+  ensureDataDir();
+  writeFileSync(SESSIONS_FILE, JSON.stringify(list, null, 2), 'utf-8');
+}
+
+function loadMessages(sessionId: string): any[] {
+  ensureDataDir();
+  try {
+    return JSON.parse(readFileSync(resolve(DATA_DIR, `${sessionId}.json`), 'utf-8'));
+  } catch { return []; }
+}
+
+function saveMessages(sessionId: string, msgs: any[]): void {
+  ensureDataDir();
+  writeFileSync(resolve(DATA_DIR, `${sessionId}.json`), JSON.stringify(msgs, null, 2), 'utf-8');
+}
 
 function getOrCreateSession(sessionId: string): QueryEngine {
   let engine = sessions.get(sessionId);
@@ -49,6 +91,13 @@ function getOrCreateSession(sessionId: string): QueryEngine {
       apiKey: process.env.BLADE_API_KEY,
       baseUrl: process.env.BLADE_BASE_URL,
     });
+    // 恢复历史消息到引擎
+    const history = loadMessages(sessionId);
+    if (history.length > 0) {
+      for (const msg of history) {
+        (engine as any).messages?.push(msg);
+      }
+    }
     sessions.set(sessionId, engine);
   }
   return engine;
@@ -140,6 +189,11 @@ async function handleChatStream(req: Request): Promise<Response> {
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
       } finally {
         controller.close();
+        // 持久化：保存引擎当前消息历史
+        try {
+          const msgs = (engine as any).messages;
+          if (msgs) saveMessages(sessionId, msgs);
+        } catch { /* ignore persistence errors */ }
       }
     },
   });
@@ -245,18 +299,45 @@ async function handleUpdateSettings(req: Request): Promise<Response> {
   });
 }
 
-function handleListSessions(): Response {
-  const sessionList = Array.from(sessions.keys()).map(id => ({
+async function handleListSessions(): Response {
+  const list = loadSessionList();
+  return new Response(JSON.stringify({ sessions: list }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+async function handleCreateSession(req: Request): Promise<Response> {
+  const body: { title?: string } = await req.json().catch(() => ({}));
+  const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 6);
+  const now = new Date().toISOString();
+  const session: SessionMeta = {
     id,
-    created: 'recent',
-  }));
-  return new Response(JSON.stringify({ sessions: sessionList }), {
+    title: body.title || '新会话',
+    created: now,
+    updated: now,
+  };
+  const list = loadSessionList();
+  list.unshift(session);
+  saveSessionList(list);
+  return new Response(JSON.stringify(session), {
+    status: 201,
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
+
+function handleGetSessionMessages(sessionId: string): Response {
+  const msgs = loadMessages(sessionId);
+  return new Response(JSON.stringify({ messages: msgs, sessionId }), {
     headers: { 'Content-Type': 'application/json' },
   });
 }
 
 function handleDeleteSession(sessionId: string): Response {
   sessions.delete(sessionId);
+  // 删除文件
+  const list = loadSessionList().filter(s => s.id !== sessionId);
+  saveSessionList(list);
+  try { writeFileSync(resolve(DATA_DIR, `${sessionId}.json`), '[]'); } catch {}
   return new Response(JSON.stringify({ ok: true }), {
     headers: { 'Content-Type': 'application/json' },
   });
@@ -340,6 +421,11 @@ async function handleRequest(req: Request): Promise<Response> {
       response = await handleUpdateSettings(req);
     } else if (pathname === '/api/sessions' && method === 'GET') {
       response = handleListSessions();
+    } else if (pathname === '/api/sessions' && method === 'POST') {
+      response = await handleCreateSession(req);
+    } else if (pathname.startsWith('/api/sessions/') && pathname.endsWith('/messages') && method === 'GET') {
+      const id = pathname.replace('/api/sessions/', '').replace('/messages', '');
+      response = handleGetSessionMessages(id);
     } else if (pathname.startsWith('/api/sessions/') && method === 'DELETE') {
       const id = pathname.replace('/api/sessions/', '');
       response = handleDeleteSession(id);

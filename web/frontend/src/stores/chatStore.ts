@@ -12,6 +12,7 @@ export interface Session {
   id: string;
   title: string;
   created: string;
+  updated?: string;
 }
 
 interface ChatState {
@@ -22,11 +23,12 @@ interface ChatState {
   streamingText: string;
 
   createSession: () => Promise<void>;
-  switchSession: (id: string) => void;
+  switchSession: (id: string, loadRemote?: boolean) => Promise<void>;
   deleteSession: (id: string) => Promise<void>;
   sendMessage: (content: string) => Promise<void>;
   clearMessages: () => void;
   loadSessions: () => Promise<void>;
+  loadSessionMessages: (id: string) => Promise<void>;
 }
 
 export const useChatStore = create<ChatState>((set, get) => ({
@@ -69,13 +71,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
     } catch { /* ignore */ }
   },
 
-  switchSession: (id: string) => {
-    set(state => {
-      if (!state.messages[id]) {
+  switchSession: async (id: string, loadRemote?: boolean) => {
+    const state = get();
+    if (loadRemote !== false && !state.messages[id]) {
+      // 尝试从服务器加载历史消息
+      try {
+        const { messages: remoteMsgs } = await bladeApi.getSessionMessages(id);
+        if (remoteMsgs && remoteMsgs.length > 0) {
+          // 转换服务器消息格式为前端 Message 格式
+          const frontendMsgs = remoteMsgs.map((m: any, i: number) => ({
+            id: `msg-${id}-${i}`,
+            role: m.role || 'assistant',
+            content: m.content || '',
+            timestamp: Date.now() - (remoteMsgs.length - i) * 1000,
+            toolCalls: m.tool_calls?.map((tc: any) => ({
+              name: tc.name || '',
+              input: tc.arguments || {},
+              status: 'completed' as const,
+              result: '',
+            })),
+          }));
+          set(state2 => ({
+            currentSessionId: id,
+            messages: { ...state2.messages, [id]: frontendMsgs },
+          }));
+          return;
+        }
+      } catch { /* fall through to welcome */ }
+    }
+    set(state2 => {
+      if (!state2.messages[id]) {
         return {
           currentSessionId: id,
           messages: {
-            ...state.messages,
+            ...state2.messages,
             [id]: [{
               id: 'welcome-' + id,
               role: 'assistant',
@@ -87,6 +116,29 @@ export const useChatStore = create<ChatState>((set, get) => ({
       }
       return { currentSessionId: id };
     });
+  },
+
+  loadSessionMessages: async (id: string) => {
+    try {
+      const { messages: remoteMsgs } = await bladeApi.getSessionMessages(id);
+      if (remoteMsgs && remoteMsgs.length > 0) {
+        const frontendMsgs = remoteMsgs.map((m: any, i: number) => ({
+          id: `msg-${id}-${i}`,
+          role: m.role || 'assistant',
+          content: m.content || '',
+          timestamp: Date.now() - (remoteMsgs.length - i) * 1000,
+          toolCalls: m.tool_calls?.map((tc: any) => ({
+            name: tc.name || '',
+            input: tc.arguments || {},
+            status: 'completed' as const,
+            result: '',
+          })),
+        }));
+        set(state => ({
+          messages: { ...state.messages, [id]: frontendMsgs },
+        }));
+      }
+    } catch { /* ignore */ }
   },
 
   deleteSession: async (id: string) => {

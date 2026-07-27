@@ -66,44 +66,44 @@ export class ContextManager {
 
   /**
    * 判断是否需要压缩上下文
+   * 阈值设低（25%），在多轮工具调用中尽早压缩，防止 API 变慢
    */
   needsCompaction(messages: EngineMessage[]): boolean {
     const total = this.estimateMessagesTokens(messages);
-    return total > this.maxTokens * 0.8; // 80% threshold
+    return total > this.maxTokens * 0.25; // 25% threshold — 尽早压缩，保持 API 响应速度
   }
 
   /**
-   * 压缩上下文字：移除早期非关键消息，保留最近的对话
+   * 压缩上下文：只保留最近 N 轮对话，丢弃历史 tool_result 细节
    */
   compact(messages: EngineMessage[]): EngineMessage[] {
-    if (messages.length <= 4) return messages; // Too short to compact
+    if (messages.length <= 4) return messages;
 
     const systemMessages = messages.filter(m => m.role === 'system');
     const nonSystemMessages = messages.filter(m => m.role !== 'system');
 
-    if (nonSystemMessages.length <= 4) return messages;
+    if (nonSystemMessages.length <= 6) return messages;
 
-    // Keep system messages + first user message (for context) + last N messages
-    const keepRatio = 0.6;
-    const keepCount = Math.max(
-      4,
-      Math.floor(nonSystemMessages.length * keepRatio),
-    );
+    // 只保留最近 6 条非系统消息（约 2-3 轮工具调用）
+    const recentMessages = nonSystemMessages.slice(-6).map(m => {
+      // 对 tool_result 消息：截断内容，只保留摘要
+      if (m.role === 'tool' && m.content && m.content.length > 200) {
+        return { ...m, content: m.content.slice(0, 200) + '...[truncated]' };
+      }
+      return m;
+    });
 
     const firstUser = nonSystemMessages.find(m => m.role === 'user');
 
-    const recentMessages = nonSystemMessages.slice(-keepCount);
+    const compacted: EngineMessage[] = [...systemMessages];
 
-    const compacted: EngineMessage[] = [
-      ...systemMessages,
-    ];
+    compacted.push({
+      role: 'system',
+      content: `[上下文已压缩：保留最近 ${recentMessages.length} 条消息，历史 tool_result 已截断。]`,
+    });
 
-    // Keep first user message if it's not already in recent
+    // 保留第一条用户消息作为上下文锚点
     if (firstUser && !recentMessages.includes(firstUser)) {
-      compacted.push({
-        role: 'system',
-        content: `[早期对话已压缩，共 ${nonSystemMessages.length - keepCount} 条消息被摘要。当前保留最近 ${keepCount} 条消息。]`,
-      });
       compacted.push(firstUser);
     }
 

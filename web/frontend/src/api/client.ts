@@ -72,6 +72,11 @@ export const bladeApi = {
     await fetch(`${BASE_URL}/sessions/${id}`, { method: 'DELETE' });
   },
 
+  getSessionMessages: async (id: string): Promise<{ messages: any[]; sessionId: string }> => {
+    const resp = await fetch(`${BASE_URL}/sessions/${id}/messages`);
+    return resp.json();
+  },
+
   /**
    * SSE 流式聊天 — 解析 llmagent 统一格式
    *
