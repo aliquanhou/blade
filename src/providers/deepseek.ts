@@ -112,6 +112,7 @@ export class DeepSeekProvider extends ProviderAdapter {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000),
     });
 
     if (!res.ok) {
@@ -152,6 +153,7 @@ export class DeepSeekProvider extends ProviderAdapter {
         Authorization: `Bearer ${this.apiKey}`,
       },
       body: JSON.stringify(body),
+      signal: AbortSignal.timeout(120_000),
     });
 
     if (!res.ok) {
