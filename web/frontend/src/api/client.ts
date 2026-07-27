@@ -87,13 +87,19 @@ export const bladeApi = {
    *   done        → onDone(completeMessage)
    *   error       → onError(message)
    */
+  getLogs: async (tail = 200, type?: string): Promise<{ logs: any[]; total: number }> => {
+    const params = `?tail=${tail}${type ? `&type=${type}` : ''}`;
+    const resp = await fetch(`${BASE_URL}/logs${params}`);
+    return resp.json();
+  },
+
   chatStream: async (
     req: ChatRequest,
     callbacks: {
       onToken: (text: string) => void;
       onToolUse: (name: string, input: Record<string, unknown>) => void;
       onToolResult: (content: string, name?: string, isError?: boolean) => void;
-      onDone: (message?: string) => void;
+      onDone: (message?: string, stop_reason?: string) => void;
       onError: (err: string) => void;
     },
   ): Promise<void> => {
@@ -140,7 +146,7 @@ export const bladeApi = {
               onToolResult(event.content, event.name, event.is_error);
               break;
             case 'done':
-              onDone(event.completeMessage);
+              onDone(event.completeMessage, event.stop_reason);
               break;
             case 'error':
               onError(event.error || 'Unknown error');

@@ -118,9 +118,7 @@ function renderSSEStream(event: SSEEvent): void {
       process.stdout.write(`\x1b[32m✓ 工具执行完成\x1b[0m\n`);
       break;
     case 'done':
-      if (event.completeMessage) {
-        process.stdout.write(`\n\n${event.completeMessage}\n`);
-      }
+      // 文本已通过 token 事件流式输出，done 不重复打印
       if (event.usage) {
         process.stderr.write(`\n\x1b[2m[Tokens: ↑${event.usage.input_tokens || '?'} ↓${event.usage.output_tokens || '?'}]\x1b[0m\n`);
       }

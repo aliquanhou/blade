@@ -41,7 +41,39 @@ const HOST = process.env.HOST || '0.0.0.0';
 const sessions = new Map<string, QueryEngine>();
 
 // ============================================================
-// Session Persistence — JSON 文件存储，重启不丢失
+// Neural Log System — 记录 AI 每一个工作细节
+// ============================================================
+
+interface LogEntry {
+  id: number;
+  ts: string;
+  type: 'system' | 'api' | 'tool' | 'sse' | 'error' | 'state';
+  session: string;
+  message: string;
+  detail?: any;
+  duration?: number;
+}
+
+const MAX_LOGS = 5000;
+const logs: LogEntry[] = [];
+let logId = 0;
+
+function addLog(type: LogEntry['type'], session: string, message: string, detail?: any, duration?: number): void {
+  logs.push({ id: ++logId, ts: new Date().toISOString(), type, session, message, detail, duration });
+  if (logs.length > MAX_LOGS) logs.splice(0, logs.length - MAX_LOGS);
+}
+
+function handleGetLogs(req: Request): Response {
+  const url = new URL(req.url);
+  const tail = parseInt(url.searchParams.get('tail') || '200', 10);
+  const typeFilter = url.searchParams.get('type') || '';
+  let result = logs;
+  if (typeFilter) result = logs.filter(l => l.type === typeFilter);
+  result = result.slice(-tail);
+  return new Response(JSON.stringify({ logs: result, total: logs.length }), {
+    headers: { 'Content-Type': 'application/json' },
+  });
+}
 // ============================================================
 
 interface SessionMeta {
@@ -91,8 +123,8 @@ function getOrCreateSession(sessionId: string): QueryEngine {
       apiKey: process.env.BLADE_API_KEY,
       baseUrl: process.env.BLADE_BASE_URL,
     });
-    // 恢复历史消息到引擎
-    const history = loadMessages(sessionId);
+    // 恢复历史消息到引擎（先消毒，清除孤儿 tool 消息）
+    const history = sanitizeMessages(loadMessages(sessionId));
     if (history.length > 0) {
       for (const msg of history) {
         (engine as any).messages?.push(msg);
@@ -101,6 +133,31 @@ function getOrCreateSession(sessionId: string): QueryEngine {
     sessions.set(sessionId, engine);
   }
   return engine;
+}
+
+/**
+ * 消毒消息列表：移除孤儿 tool 消息（没有前驱 assistant tool_calls 的 tool result）
+ * DeepSeek API 严格要求每个 tool 消息前面必须有对应的 tool_calls
+ */
+function sanitizeMessages(msgs: any[]): any[] {
+  const result: any[] = [];
+  let pendingToolCalls = 0; // 当前期待的 tool result 数量
+  for (const msg of msgs) {
+    if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+      pendingToolCalls = msg.tool_calls.length;
+      result.push(msg);
+    } else if (msg.role === 'tool') {
+      if (pendingToolCalls > 0) {
+        pendingToolCalls--;
+        result.push(msg);
+      } else {
+        addLog('error', 'sanitize', `Dropped orphaned tool message: ${msg.name || 'unknown'}`);
+      }
+    } else {
+      result.push(msg);
+    }
+  }
+  return result;
 }
 
 // ============================================================
@@ -166,25 +223,44 @@ async function handleChatStream(req: Request): Promise<Response> {
   const sessionId = body.session_id || 'default';
 
   if (!prompt) {
+    addLog('state', sessionId, '空提示拒绝');
     return new Response(JSON.stringify({ error: 'empty prompt' }), {
       status: 400,
       headers: { 'Content-Type': 'application/json' },
     });
   }
 
+  addLog('sse', sessionId, `Chat stream start: "${prompt.slice(0, 50)}..."`);
   const engine = getOrCreateSession(sessionId);
+  const streamStart = Date.now();
 
   // Create SSE stream
   const stream = new ReadableStream({
     async start(controller) {
       const encoder = new TextEncoder();
+      let eventCount = 0;
 
       try {
         for await (const event of engine.chat(prompt)) {
+          eventCount++;
+          if (event.type === 'tool_use') {
+            addLog('tool', sessionId, `Tool call: ${event.name}`, event.input);
+          } else if (event.type === 'tool_result') {
+            const detail = event.content ? event.content.slice(0, 150) : '';
+            addLog('tool', sessionId, `Tool result: ${event.name || ''}`, detail);
+          } else if (event.type === 'token') {
+            addLog('sse', sessionId, `Token: ${(event.content || '').length} chars`);
+          } else if (event.type === 'error') {
+            addLog('error', sessionId, `Stream error: ${event.error}`);
+          } else if (event.type === 'done') {
+            addLog('sse', sessionId, `Stream done (stop_reason: ${event.stop_reason || 'unknown'})`, null, Date.now() - streamStart);
+          }
           const data = `data: ${JSON.stringify(event)}\n\n`;
           controller.enqueue(encoder.encode(data));
         }
+        addLog('sse', sessionId, `Stream complete: ${eventCount} events`, null, Date.now() - streamStart);
       } catch (e: any) {
+        addLog('error', sessionId, `Stream exception: ${e.message}`);
         const errorEvent: SSEEvent = { type: 'error', error: e.message };
         controller.enqueue(encoder.encode(`data: ${JSON.stringify(errorEvent)}\n\n`));
       } finally {
@@ -192,8 +268,11 @@ async function handleChatStream(req: Request): Promise<Response> {
         // 持久化：保存引擎当前消息历史
         try {
           const msgs = (engine as any).messages;
-          if (msgs) saveMessages(sessionId, msgs);
-        } catch { /* ignore persistence errors */ }
+          if (msgs) {
+            saveMessages(sessionId, msgs);
+            addLog('state', sessionId, `Messages persisted: ${msgs.length} msgs`);
+          }
+        } catch { addLog('error', sessionId, 'Failed to persist messages'); }
       }
     },
   });
@@ -319,6 +398,7 @@ async function handleCreateSession(req: Request): Promise<Response> {
   const list = loadSessionList();
   list.unshift(session);
   saveSessionList(list);
+  addLog('state', id, `Session created: "${session.title}"`);
   return new Response(JSON.stringify(session), {
     status: 201,
     headers: { 'Content-Type': 'application/json' },
@@ -435,6 +515,8 @@ async function handleRequest(req: Request): Promise<Response> {
     } else if (pathname.startsWith('/api/files/') && method === 'PUT') {
       const filePath = pathname.replace('/api/files', '');
       response = await handleWriteFile(filePath, req);
+    } else if (pathname === '/api/logs' && method === 'GET') {
+      response = handleGetLogs(req);
     } else if (pathname === '/api' || pathname === '/api/') {
       response = new Response(
         JSON.stringify({ name: 'Blade API', version: '1.0.0' }),

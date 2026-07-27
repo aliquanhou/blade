@@ -212,6 +212,9 @@ export class QueryEngine {
         this.messages = this.contextManager.compact(this.messages);
       }
 
+      // 安全消毒：移除孤儿 tool 消息（没有前驱 tool_calls 的 tool result）
+      this.messages = this.sanitizeMessages(this.messages);
+
       // Build messages for provider
       const bladeMessages = this.buildQueryMessages();
 
@@ -350,6 +353,29 @@ export class QueryEngine {
     await new Promise(resolve => setTimeout(resolve, delay));
 
     return true;
+  }
+
+  /**
+   * 安全消毒：移除孤儿 tool 消息（没有前驱 assistant tool_calls 的 tool result）
+   * DeepSeek API 严格要求每个 tool 消息前面必须有对应的 tool_calls
+   */
+  private sanitizeMessages(msgs: EngineMessage[]): EngineMessage[] {
+    const result: EngineMessage[] = [];
+    let pendingToolCalls = 0;
+    for (const msg of msgs) {
+      if (msg.role === 'assistant' && msg.tool_calls && msg.tool_calls.length > 0) {
+        pendingToolCalls = msg.tool_calls.length;
+        result.push(msg);
+      } else if (msg.role === 'tool') {
+        if (pendingToolCalls > 0) {
+          pendingToolCalls--;
+          result.push(msg);
+        } // else: orphaned tool message, dropped
+      } else {
+        result.push(msg);
+      }
+    }
+    return result;
   }
 
   /**

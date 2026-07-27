@@ -3,17 +3,18 @@ import { useChatStore } from './stores/chatStore';
 import { useToolStore } from './stores/toolStore';
 import { MessageItem } from './components/chat/MessageItem';
 import { StatusBar } from './components/chat/StatusBar';
+import { LogPanel } from './components/chat/LogPanel';
 import { bladeApi } from './api/client';
 import type { HealthStatus, Tool, FileEntry } from './types';
 
 function App() {
-  const { messages, currentSessionId, isStreaming, sendMessage, createSession, switchSession, deleteSession, loadSessions, sessions } = useChatStore();
+  const { messages, currentSessionId, isStreaming, stopReason, sendMessage, createSession, switchSession, deleteSession, loadSessions, sessions } = useChatStore();
   const [input, setInput] = useState('');
   const [health, setHealth] = useState<HealthStatus | null>(null);
   const [tools, setTools] = useState<Tool[]>([]);
   const [files, setFiles] = useState<FileEntry[]>([]);
   const [currentPath, setCurrentPath] = useState('.');
-  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'files' | 'tools'>('sessions');
+  const [sidebarTab, setSidebarTab] = useState<'sessions' | 'files' | 'tools' | 'logs'>('sessions');
   const [showSettings, setShowSettings] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   const [settingsProvider, setSettingsProvider] = useState('deepseek');
@@ -28,13 +29,19 @@ function App() {
   const [streamStuck, setStreamStuck] = useState(false);
   const lastEventRef = useRef(Date.now());
 
-  // Auto-scroll + update last event timestamp
+  // Auto-scroll + update last event timestamp (debounced)
+  const scrollTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    // Debounce to avoid layout thrashing during rapid streaming updates
+    if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current);
+    scrollTimerRef.current = setTimeout(() => {
+      bottomRef.current?.scrollIntoView({ behavior: 'smooth' });
+    }, 50);
     if (isStreaming) {
       lastEventRef.current = Date.now();
       if (streamStuck) setStreamStuck(false);
     }
+    return () => { if (scrollTimerRef.current) clearTimeout(scrollTimerRef.current); };
   }, [currentMessages]);
 
   // Stuck detection: polls every 5s when streaming, warns if 30s idle
@@ -103,10 +110,10 @@ function App() {
         {!sidebarCollapsed && (
           <aside className="w-60 border-r border-gray-700 flex flex-col bg-gray-900 shrink-0">
             <div className="flex border-b border-gray-700">
-              {(['sessions','files','tools'] as const).map(tab => (
+              {(['sessions','files','tools','logs'] as const).map(tab => (
                 <button key={tab} onClick={() => setSidebarTab(tab)}
                   className={`flex-1 py-2 text-xs font-medium ${sidebarTab === tab ? 'bg-gray-800 text-white border-b-2 border-blue-500' : 'text-gray-400 hover:text-white'}`}
-                >{tab === 'sessions' ? '💬' : tab === 'files' ? '📂' : '🔧'}</button>
+                >{tab === 'sessions' ? '💬' : tab === 'files' ? '📂' : tab === 'tools' ? '🔧' : '📡'}</button>
               ))}
             </div>
             <div className="flex-1 overflow-y-auto p-2 text-sm">
@@ -146,6 +153,8 @@ function App() {
                   ))}
                 </div>
               )}
+              {sidebarTab === 'logs' && <LogPanel />}
+
               {sidebarTab === 'tools' && (
                 <div className="space-y-1">
                   {['file', 'code', 'shell', 'web', 'git', 'system'].map(cat => {
@@ -187,10 +196,11 @@ function App() {
             {currentMessages.map(msg => (
               <MessageItem key={msg.id} message={msg} isStreaming={isStreaming && msg.id === currentMessages[currentMessages.length-1]?.id && msg.role === 'assistant'} />
             ))}
-            {/* 工作状态指示器 */}
-            <StatusBar isStreaming={isStreaming} streamStuck={streamStuck} messages={currentMessages} />
             <div ref={bottomRef} />
           </div>
+
+          {/* 工作状态指示器 — 放在 chat 区域外，避免 DOM 协调冲突 */}
+          <StatusBar key="status-bar" isStreaming={isStreaming} streamStuck={streamStuck} stopReason={stopReason} messages={currentMessages} />
 
           <div className="border-t border-gray-700 p-4 bg-gray-900">
             <div className="flex gap-2 max-w-4xl mx-auto">

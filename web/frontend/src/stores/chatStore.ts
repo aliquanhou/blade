@@ -6,7 +6,57 @@
 
 import { create } from 'zustand';
 import { bladeApi } from '../api/client';
+import { useLogStore } from './logStore';
 import type { Message, ToolCallInfo } from '../types';
+
+// 将服务器消息转换为前端 Message 格式，同时移除孤儿 tool 消息
+function toFrontendMessages(remoteMsgs: any[], sessionId: string): Message[] {
+  const result: Message[] = [];
+  let pendingToolCalls = 0;
+  for (let i = 0; i < remoteMsgs.length; i++) {
+    const m = remoteMsgs[i];
+    if (m.role === 'assistant' && m.tool_calls && m.tool_calls.length > 0) {
+      pendingToolCalls = m.tool_calls.length;
+      result.push({
+        id: `msg-${sessionId}-${i}`,
+        role: 'assistant',
+        content: m.content || '',
+        timestamp: Date.now() - (remoteMsgs.length - i) * 1000,
+        toolCalls: m.tool_calls.map((tc: any) => ({
+          name: tc.name || tc.function?.name || '',
+          input: tc.arguments || tc.function?.arguments || {},
+          status: 'completed' as const,
+          result: '',
+        })),
+      });
+    } else if (m.role === 'tool') {
+      if (pendingToolCalls > 0) {
+        pendingToolCalls--;
+        // tool 结果更新到最后一个 tool call 的 result
+        if (result.length > 0) {
+          const last = result[result.length - 1];
+          const target = last.toolCalls?.find(tc => tc.status === 'completed' && !tc.result);
+          if (target) target.result = (m.content || '').slice(0, 500);
+        }
+      } // else: 孤儿 tool 消息，丢弃
+    } else if (m.role === 'user') {
+      result.push({
+        id: `msg-${sessionId}-${i}`,
+        role: 'user',
+        content: m.content || '',
+        timestamp: Date.now() - (remoteMsgs.length - i) * 1000,
+      });
+    } else if (m.role === 'assistant') {
+      result.push({
+        id: `msg-${sessionId}-${i}`,
+        role: 'assistant',
+        content: m.content || '',
+        timestamp: Date.now() - (remoteMsgs.length - i) * 1000,
+      });
+    } // system 等角色跳过
+  }
+  return result;
+}
 
 export interface Session {
   id: string;
@@ -21,6 +71,7 @@ interface ChatState {
   sessions: Session[];
   isStreaming: boolean;
   streamingText: string;
+  stopReason: string | null;
 
   createSession: () => Promise<void>;
   switchSession: (id: string, loadRemote?: boolean) => Promise<void>;
@@ -44,11 +95,35 @@ export const useChatStore = create<ChatState>((set, get) => ({
   sessions: [],
   isStreaming: false,
   streamingText: '',
+  stopReason: null,
 
   loadSessions: async () => {
     try {
       const sessions = await bladeApi.sessions();
       set({ sessions });
+
+      // 恢复持久化的最新会话内容
+      if (sessions && sessions.length > 0) {
+        const latest = sessions[0];
+        try {
+          const { messages: remoteMsgs } = await bladeApi.getSessionMessages(latest.id);
+          if (remoteMsgs && remoteMsgs.length > 0) {
+            const frontendMsgs = toFrontendMessages(remoteMsgs, latest.id);
+            set({ currentSessionId: latest.id, messages: { [latest.id]: frontendMsgs } });
+            return;
+          }
+        } catch { /* fall through */ }
+      }
+
+      // 没有持久化会话，尝试恢复 default
+      try {
+        const { messages: defaultMsgs } = await bladeApi.getSessionMessages('default');
+        if (defaultMsgs && defaultMsgs.length > 0) {
+          const frontendMsgs = toFrontendMessages(defaultMsgs, 'default');
+          set({ currentSessionId: 'default', messages: { default: frontendMsgs } });
+          return;
+        }
+      } catch { /* fall through */ }
     } catch { /* ignore */ }
   },
 
@@ -78,19 +153,8 @@ export const useChatStore = create<ChatState>((set, get) => ({
       try {
         const { messages: remoteMsgs } = await bladeApi.getSessionMessages(id);
         if (remoteMsgs && remoteMsgs.length > 0) {
-          // 转换服务器消息格式为前端 Message 格式
-          const frontendMsgs = remoteMsgs.map((m: any, i: number) => ({
-            id: `msg-${id}-${i}`,
-            role: m.role || 'assistant',
-            content: m.content || '',
-            timestamp: Date.now() - (remoteMsgs.length - i) * 1000,
-            toolCalls: m.tool_calls?.map((tc: any) => ({
-              name: tc.name || '',
-              input: tc.arguments || {},
-              status: 'completed' as const,
-              result: '',
-            })),
-          }));
+          // 转换服务器消息格式为前端 Message 格式（自动消毒孤儿 tool 消息）
+          const frontendMsgs = toFrontendMessages(remoteMsgs, id);
           set(state2 => ({
             currentSessionId: id,
             messages: { ...state2.messages, [id]: frontendMsgs },
@@ -122,18 +186,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
     try {
       const { messages: remoteMsgs } = await bladeApi.getSessionMessages(id);
       if (remoteMsgs && remoteMsgs.length > 0) {
-        const frontendMsgs = remoteMsgs.map((m: any, i: number) => ({
-          id: `msg-${id}-${i}`,
-          role: m.role || 'assistant',
-          content: m.content || '',
-          timestamp: Date.now() - (remoteMsgs.length - i) * 1000,
-          toolCalls: m.tool_calls?.map((tc: any) => ({
-            name: tc.name || '',
-            input: tc.arguments || {},
-            status: 'completed' as const,
-            result: '',
-          })),
-        }));
+        const frontendMsgs = toFrontendMessages(remoteMsgs, id);
         set(state => ({
           messages: { ...state.messages, [id]: frontendMsgs },
         }));
@@ -184,27 +237,40 @@ export const useChatStore = create<ChatState>((set, get) => ({
       },
       isStreaming: true,
       streamingText: '',
+      stopReason: null,
     }));
 
     let accumulated = '';
+    let batchTimer: ReturnType<typeof setTimeout> | null = null;
     const currentToolCalls: ToolCallInfo[] = [];
+    const streamStart = Date.now();
+    const log = useLogStore.getState().addLog;
+
+    log('api', `Chat stream start: "${content.slice(0, 60)}..."`);
 
     await bladeApi.chatStream(
       { prompt: content, session_id: currentSessionId },
       {
         onToken: (token) => {
           accumulated += token;
-          set(state => {
-            const msgs = [...(state.messages[currentSessionId] || [])];
-            const last = { ...msgs[msgs.length - 1], content: accumulated, toolCalls: currentToolCalls };
-            msgs[msgs.length - 1] = last;
-            return {
-              messages: { ...state.messages, [currentSessionId]: msgs },
-              streamingText: accumulated,
-            };
-          });
+          // 批量更新：每 ~50ms 刷新一次 UI，减少 React 协调压力
+          if (!batchTimer) {
+            batchTimer = setTimeout(() => {
+              batchTimer = null;
+              set(state => {
+                const msgs = [...(state.messages[currentSessionId] || [])];
+                const last = { ...msgs[msgs.length - 1], content: accumulated, toolCalls: currentToolCalls };
+                msgs[msgs.length - 1] = last;
+                return {
+                  messages: { ...state.messages, [currentSessionId]: msgs },
+                  streamingText: accumulated,
+                };
+              });
+            }, 50);
+          }
         },
         onToolUse: (name, input) => {
+          log('tool', `Tool use: ${name}`, JSON.stringify(input));
           const toolCall: ToolCallInfo = {
             name,
             input,
@@ -219,7 +285,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
           });
         },
         onToolResult: (resultContent, name, isError) => {
-          // Update the matching tool call status
+          log('tool', `Tool result: ${name} [${isError ? 'FAIL' : 'OK'}]`, (resultContent || '').slice(0, 200));
           const tc = currentToolCalls.find(t => t.name === name && t.status === 'running');
           if (tc) {
             tc.status = isError ? 'failed' : 'completed';
@@ -232,13 +298,23 @@ export const useChatStore = create<ChatState>((set, get) => ({
             return { messages: { ...state.messages, [currentSessionId]: msgs } };
           });
         },
-        onDone: (_completeMessage) => {
-          set({
-            isStreaming: false,
-            streamingText: '',
+        onDone: (_completeMessage, stop_reason) => {
+          if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
+          set(state => {
+            const msgs = [...(state.messages[currentSessionId] || [])];
+            const last = { ...msgs[msgs.length - 1], content: accumulated, toolCalls: currentToolCalls };
+            msgs[msgs.length - 1] = last;
+            return {
+              messages: { ...state.messages, [currentSessionId]: msgs },
+              isStreaming: false,
+              streamingText: '',
+              stopReason: stop_reason || null,
+            };
           });
         },
         onError: (error) => {
+          if (batchTimer) { clearTimeout(batchTimer); batchTimer = null; }
+          log('error', `Stream error: ${error}`, undefined, Date.now() - streamStart);
           set(state => {
             const msgs = [...(state.messages[currentSessionId] || [])];
             const last = {
@@ -251,6 +327,7 @@ export const useChatStore = create<ChatState>((set, get) => ({
               messages: { ...state.messages, [currentSessionId]: msgs },
               isStreaming: false,
               streamingText: '',
+              stopReason: 'error',
             };
           });
         },

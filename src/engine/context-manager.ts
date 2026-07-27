@@ -74,7 +74,11 @@ export class ContextManager {
   }
 
   /**
-   * 压缩上下文：只保留最近 N 轮对话，丢弃历史 tool_result 细节
+   * 压缩上下文：只保留最近几轮完整对话，保证 tool 消息不 orphan
+   *
+   * DeepSeek API 严格要求：每个 tool 角色消息前面必须有
+   * 对应的 assistant 消息且带有 tool_calls。压缩时不能拆散
+   * tool_calls ↔ tool_result 配对。
    */
   compact(messages: EngineMessage[]): EngineMessage[] {
     if (messages.length <= 4) return messages;
@@ -84,14 +88,46 @@ export class ContextManager {
 
     if (nonSystemMessages.length <= 6) return messages;
 
-    // 只保留最近 6 条非系统消息（约 2-3 轮工具调用）
-    const recentMessages = nonSystemMessages.slice(-6).map(m => {
-      // 对 tool_result 消息：截断内容，只保留摘要
-      if (m.role === 'tool' && m.content && m.content.length > 200) {
-        return { ...m, content: m.content.slice(0, 200) + '...[truncated]' };
+    // 从后往前扫描，收集完整的对话轮次
+    // 一轮 = [user, assistant(可能含 tool_calls), tool*]
+    const recentMessages: EngineMessage[] = [];
+    const maxRounds = 2; // 保留最近 2 轮
+    let roundCount = 0;
+    let i = nonSystemMessages.length - 1;
+
+    while (i >= 0 && roundCount < maxRounds) {
+      // 收集 tool 结果（从后往前）
+      const batch: EngineMessage[] = [];
+      while (i >= 0 && nonSystemMessages[i].role === 'tool') {
+        if (nonSystemMessages[i].content && nonSystemMessages[i].content.length > 200) {
+          batch.unshift({ ...nonSystemMessages[i], content: nonSystemMessages[i].content.slice(0, 200) + '...[truncated]' });
+        } else {
+          batch.unshift(nonSystemMessages[i]);
+        }
+        i--;
       }
-      return m;
-    });
+
+      // 收集 assistant（含 tool_calls）
+      if (i >= 0 && nonSystemMessages[i].role === 'assistant') {
+        batch.unshift({ ...nonSystemMessages[i] });
+        i--;
+      }
+
+      // 收集 user
+      if (i >= 0 && nonSystemMessages[i].role === 'user') {
+        batch.unshift({ ...nonSystemMessages[i] });
+        i--;
+      }
+
+      // 只有完整的轮次（有 user 消息）才保留
+      if (batch.length > 0 && batch[0]?.role === 'user') {
+        recentMessages.unshift(...batch);
+        roundCount++;
+      } else {
+        // 不完整的轮次（如只有 tool 结果没有 assistant）— 丢弃
+        break;
+      }
+    }
 
     const firstUser = nonSystemMessages.find(m => m.role === 'user');
 
@@ -99,11 +135,15 @@ export class ContextManager {
 
     compacted.push({
       role: 'system',
-      content: `[上下文已压缩：保留最近 ${recentMessages.length} 条消息，历史 tool_result 已截断。]`,
+      content: `[上下文已压缩：保留最近 ${recentMessages.length} 条消息，共 ${nonSystemMessages.length - recentMessages.length} 条已移除。]`,
     });
 
     // 保留第一条用户消息作为上下文锚点
-    if (firstUser && !recentMessages.includes(firstUser)) {
+    let hasFirstUser = false;
+    for (const m of recentMessages) {
+      if (m === firstUser || m.role === 'user') { hasFirstUser = true; break; }
+    }
+    if (firstUser && !hasFirstUser) {
       compacted.push(firstUser);
     }
 
